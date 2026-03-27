@@ -4,7 +4,15 @@
 # Stage 1: GNINA build (from pre-built image)
 FROM gnina/gnina:latest AS gnina-stage
 
-# Stage 2: Final Image (CPU + GPU)
+# Stage 2: Build React frontend
+FROM node:20-alpine AS frontend-builder
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+# Stage 3: Final Image (CPU + GPU)
 FROM python:3.11-slim
 
 LABEL maintainer="BioDockify"
@@ -52,6 +60,9 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY backend/ /app/
 
+# Copy React built frontend into static directory
+COPY --from=frontend-builder /app/frontend/dist /app/backend/static/
+
 # Create supervisor configuration
 RUN mkdir -p /var/log/supervisor
 
@@ -62,6 +73,7 @@ RUN echo '#!/bin/bash' > /startup.sh && \
     echo 'echo "  🧬 Docking Studio - Backend Starting..."' >> /startup.sh && \
     echo 'echo "============================================================"' >> /startup.sh && \
     echo 'echo ""' >> /startup.sh && \
+    echo 'echo "  🌐 Web UI:           http://localhost:8000"' >> /startup.sh && \
     echo 'echo "  📚 API Documentation: http://localhost:8000/docs"' >> /startup.sh && \
     echo 'echo "  📖 ReDoc:            http://localhost:8000/redoc"' >> /startup.sh && \
     echo 'echo "  ✅ Health:           http://localhost:8000/health"' >> /startup.sh && \

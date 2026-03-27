@@ -1,6 +1,12 @@
 # BioDockify Docking Studio - Git Ignore File
 # Specifies intentionally untracked files
 
+# Frontend dependencies (built during docker build)
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.npm/
+
 # Python
 __pycache__/
 *.py[cod]

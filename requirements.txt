@@ -1,43 +1,32 @@
-# BioDockify Docking Studio - Production Requirements
+# BioDockify Docking Studio - Local Development Requirements
 # Python 3.8+ required
+# Note: Full application runs in Docker. These are for local backend development only.
 
 # FastAPI and web framework
-fastapi==0.95.0
-uvicorn[standard]==0.19.0
-pydantic==1.10.0
+fastapi>=0.95.0
+uvicorn[standard]>=0.19.0
+pydantic>=1.10.0
 python-multipart>=0.0.22
 
 # Database
-sqlalchemy==2.0.20
+sqlalchemy>=2.0.20
 
 # Docker SDK
-docker==6.1.0
+docker>=6.1.0
 
 # Scientific computing
-numpy==1.24.0
-pandas==2.0.0
+numpy>=1.24.0
+pandas>=2.0.0
 
 # Molecular docking
-# openbabel - optional, will install if available
-pymolecule==0.0.4
-
-# Chemistry - optional, for molecule processing
-# rdkit and oddt will be installed from Docker container
-
-# PyQt6 UI
-PyQt6>=6.6.1
-PyQt6-WebEngine>=6.6.0
-PyQt6-Qt6>=6.6.1
+pymolecule>=0.0.4
 
 # Utilities
-python-dotenv==1.0.0
-pyyaml==6.0
+python-dotenv>=1.0.0
+pyyaml>=6.0
 
 # Logging
-loguru==0.7.0
-
-# Build tools
-pyinstaller>=6.3.0
+loguru>=0.7.0
 
 # Security fixes for vulnerabilities
 wheel>=0.46.2
