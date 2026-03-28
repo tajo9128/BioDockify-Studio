@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import os
 import re
 import uuid
@@ -730,6 +730,176 @@ def get_gpu_status():
         logger.warning(f"GPU detection error: {e}")
 
     return {"available": False, "gpus": [], "message": "No GPU detected"}
+
+
+# ============================================================
+# Pharmacophore Modeling Endpoints
+# ============================================================
+
+class PharmacophoreRequest(BaseModel):
+    smiles: Optional[str] = None
+    pdb: Optional[str] = None
+    features: Optional[List[Dict[str, Any]]] = None
+
+
+class ScreenRequest(BaseModel):
+    library: List[str]
+    min_features: int = 3
+    required_features: Optional[List[str]] = None
+
+
+class AlignRequest(BaseModel):
+    reference_features: List[Dict[str, Any]]
+    mobile_smiles: str
+
+
+@app.post("/pharmacophore/generate")
+def generate_pharmacophore(request: PharmacophoreRequest):
+    """
+    Generate pharmacophore from SMILES or PDB structure.
+    
+    Returns pharmacophore features with 3D coordinates for visualization.
+    """
+    try:
+        from pharmacophore import get_engine
+        
+        engine = get_engine()
+        
+        if request.smiles:
+            result = engine.generate_from_smiles(request.smiles)
+        elif request.pdb:
+            result = engine.generate_from_pdb(request.pdb)
+        else:
+            return {"success": False, "error": "Provide SMILES or PDB input"}
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Pharmacophore generation error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/pharmacophore/screen")
+def screen_library(request: ScreenRequest):
+    """
+    Screen a library of compounds against pharmacophore features.
+    
+    Filters compounds based on feature matching.
+    """
+    try:
+        from pharmacophore import get_engine
+        
+        engine = get_engine()
+        result = engine.screen_library(
+            library_smiles=request.library,
+            min_features=request.min_features,
+            required_features=request.required_features
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Pharmacophore screening error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/pharmacophore/align")
+def align_molecule(request: AlignRequest):
+    """
+    Align a molecule to a reference pharmacophore.
+    
+    Returns alignment score and RMSD.
+    """
+    try:
+        from pharmacophore import get_engine
+        
+        engine = get_engine()
+        result = engine.align_to_pharmacophore(
+            ref_features=request.reference_features,
+            mobile_smiles=request.mobile_smiles
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Pharmacophore alignment error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/pharmacophore/features")
+def get_feature_info():
+    """
+    Get information about available pharmacophore features.
+    
+    Returns feature types, colors, and descriptions.
+    """
+    from pharmacophore import FEATURE_COLORS, FEATURE_RADII
+    
+    features = [
+        {
+            "name": "Donor",
+            "color": FEATURE_COLORS.get("Donor"),
+            "radius": FEATURE_RADII.get("Donor"),
+            "description": "Hydrogen bond donor"
+        },
+        {
+            "name": "Acceptor", 
+            "color": FEATURE_COLORS.get("Acceptor"),
+            "radius": FEATURE_RADII.get("Acceptor"),
+            "description": "Hydrogen bond acceptor"
+        },
+        {
+            "name": "Hydrophobic",
+            "color": FEATURE_COLORS.get("Hydrophobic"),
+            "radius": FEATURE_RADII.get("Hydrophobic"),
+            "description": "Hydrophobic region"
+        },
+        {
+            "name": "Aromatic",
+            "color": FEATURE_COLORS.get("Aromatic"),
+            "radius": FEATURE_RADII.get("Aromatic"),
+            "description": "Aromatic ring center"
+        },
+        {
+            "name": "PosIonizable",
+            "color": FEATURE_COLORS.get("PosIonizable"),
+            "radius": FEATURE_RADII.get("PosIonizable"),
+            "description": "Positive ionizable group"
+        },
+        {
+            "name": "NegIonizable",
+            "color": FEATURE_COLORS.get("NegIonizable"),
+            "radius": FEATURE_RADII.get("NegIonizable"),
+            "description": "Negative ionizable group"
+        },
+    ]
+    
+    return {
+        "features": features,
+        "total_types": len(features)
+    }
+
+
+@app.get("/pharmacophore/visualization/{feature_type}")
+def get_feature_visualization(feature_type: str):
+    """
+    Get 3D visualization data for a specific feature type.
+    """
+    from pharmacophore import FEATURE_COLORS, FEATURE_RADII
+    
+    color = FEATURE_COLORS.get(feature_type, "#888888")
+    radius = FEATURE_RADII.get(feature_type, 1.5)
+    
+    return {
+        "type": feature_type,
+        "color": color,
+        "radius": radius,
+        "sphere_config": {
+            "radius": radius,
+            "color": color,
+            "alpha": 0.5
+        }
+    }
 
 
 @app.get("/{path:path}")

@@ -10,6 +10,7 @@ import { Viewer } from '@/pages/Viewer'
 import { AIAssistant } from '@/pages/AIAssistant'
 import { Security } from '@/pages/Security'
 import { Settings } from '@/pages/Settings'
+import { Pharmacophore } from '@/pages/Pharmacophore'
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="/results" element={<Results />} />
           <Route path="/rmsd" element={<RMSDAnalysis />} />
           <Route path="/interactions" element={<Interactions />} />
+          <Route path="/pharmacophore" element={<Pharmacophore />} />
           <Route path="/viewer" element={<Viewer />} />
           <Route path="/ai" element={<AIAssistant />} />
           <Route path="/security" element={<Security />} />

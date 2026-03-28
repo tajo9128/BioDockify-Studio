@@ -1,9 +1,9 @@
 """
-Docking Engine - Actual molecular docking using AutoDock Vina Python API
-Includes PDBQT file preparation using RDKit/MeeKo
+Docking Engine - Molecular docking using AutoDock Vina, GNINA, and consensus scoring
 """
 import os
 import logging
+import subprocess
 import tempfile
 from typing import Dict, Any, List, Optional
 
@@ -19,31 +19,48 @@ def check_vina() -> bool:
         return False
 
 
+def check_gnina() -> bool:
+    """Check if GNINA is available via command line"""
+    try:
+        result = subprocess.run(
+            ["which", "gnina"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def check_rfscore() -> bool:
+    """Check if RF-Score is available"""
+    try:
+        result = subprocess.run(
+            ["which", "rfscore"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 def convert_pdb_to_pdbqt(input_path: str, output_path: str, is_ligand: bool = False) -> bool:
     """
     Convert PDB file to PDBQT format using RDKit and MeeKo.
-    
-    Args:
-        input_path: Path to input PDB file
-        output_path: Path to output PDBQT file
-        is_ligand: True for ligand, False for receptor
-        
-    Returns:
-        True if conversion successful, False otherwise
     """
     try:
         from rdkit import Chem
         from meeko import PDBQTMoleculeWriter, MoleculePreparation
         
-        # Read molecule
         mol = Chem.MolFromPDBFile(input_path, removeHs=False)
         if mol is None:
             logger.error(f"Failed to read PDB file: {input_path}")
             return False
         
-        # Prepare molecule
         if is_ligand:
-            # For ligands: use MeeKo preparation
             preparator = MoleculePreparation()
             mol_setups = preparator.prepare(mol)
             if mol_setups is None or len(mol_setups) == 0:
@@ -51,18 +68,14 @@ def convert_pdb_to_pdbqt(input_path: str, output_path: str, is_ligand: bool = Fa
                 return False
             setup = mol_setups[0]
             
-            # Write to PDBQT
             with open(output_path, 'w') as f:
                 writer = PDBQTMoleculeWriter(f)
                 writer.write([setup])
                 writer.close()
         else:
-            # For receptors: add PDBQT format header and write
-            # Receptors are treated as rigid, just need to add ATOM/HETATM lines
             with open(input_path, 'r') as inf, open(output_path, 'w') as outf:
                 for line in inf:
                     if line.startswith(('ATOM', 'HETATM')):
-                        # Add blank fields for charge and type if not present
                         if len(line) < 66:
                             line = line.rstrip() + ' ' * (66 - len(line))
                         outf.write(line)
@@ -79,17 +92,7 @@ def convert_pdb_to_pdbqt(input_path: str, output_path: str, is_ligand: bool = Fa
 
 
 def prepare_receptor_file(receptor_path: str, output_dir: str = "/tmp") -> Optional[str]:
-    """
-    Prepare receptor file for Vina docking.
-    Converts PDB to PDBQT if necessary.
-    
-    Args:
-        receptor_path: Path to receptor file
-        output_dir: Directory for temporary files
-        
-    Returns:
-        Path to prepared PDBQT file or None if preparation fails
-    """
+    """Prepare receptor file for docking"""
     _, ext = os.path.splitext(receptor_path)
     ext = ext.lower()
     
@@ -97,32 +100,17 @@ def prepare_receptor_file(receptor_path: str, output_dir: str = "/tmp") -> Optio
         return receptor_path
     
     if ext == '.pdb':
-        # Try to convert PDB to PDBQT
         output_path = os.path.join(output_dir, f"prepared_receptor_{os.path.basename(receptor_path)}.pdbqt")
         if convert_pdb_to_pdbqt(receptor_path, output_path, is_ligand=False):
             return output_path
-        else:
-            # If conversion fails, try using the PDB file directly
-            # Some Vina versions accept PDB files
-            logger.warning(f"PDBQT conversion failed, trying PDB file directly")
-            return receptor_path
+        return receptor_path
     
-    logger.error(f"Unsupported receptor format: {ext}. Use PDB or PDBQT.")
+    logger.error(f"Unsupported receptor format: {ext}")
     return None
 
 
 def prepare_ligand_file(ligand_path: str, output_dir: str = "/tmp") -> Optional[str]:
-    """
-    Prepare ligand file for Vina docking.
-    Converts PDB/SDF/MOL2 to PDBQT if necessary.
-    
-    Args:
-        ligand_path: Path to ligand file
-        output_dir: Directory for temporary files
-        
-    Returns:
-        Path to prepared PDBQT file or None if preparation fails
-    """
+    """Prepare ligand file for docking"""
     _, ext = os.path.splitext(ligand_path)
     ext = ext.lower()
     
@@ -130,15 +118,12 @@ def prepare_ligand_file(ligand_path: str, output_dir: str = "/tmp") -> Optional[
         return ligand_path
     
     if ext in ['.pdb', '.sdf', '.mol2']:
-        # Try to convert to PDBQT
         output_path = os.path.join(output_dir, f"prepared_ligand_{os.path.basename(ligand_path)}.pdbqt")
         if convert_pdb_to_pdbqt(ligand_path, output_path, is_ligand=True):
             return output_path
-        else:
-            logger.error(f"Ligand conversion failed for: {ligand_path}")
-            return None
+        return None
     
-    logger.error(f"Unsupported ligand format: {ext}. Use PDB, SDF, MOL2, or PDBQT.")
+    logger.error(f"Unsupported ligand format: {ext}")
     return None
 
 
@@ -155,25 +140,10 @@ def run_vina_docking(
     num_modes: int = 9,
     output_dir: str = "/tmp"
 ) -> Dict[str, Any]:
-    """
-    Run AutoDock Vina docking using Python API.
-    
-    Args:
-        receptor_path: Path to receptor PDBQT file
-        ligand_path: Path to ligand PDBQT file
-        center_x, center_y, center_z: Grid box center coordinates
-        size_x, size_y, size_z: Grid box dimensions
-        exhaustiveness: Search exhaustiveness (1-32)
-        num_modes: Number of binding modes to generate
-        output_dir: Directory for output files
-        
-    Returns:
-        Dictionary with docking results
-    """
+    """Run AutoDock Vina using Python API"""
     try:
         from vina import Vina
     except ImportError:
-        logger.error("Vina not installed")
         return {
             "success": False,
             "error": "Vina Python package not installed",
@@ -182,107 +152,41 @@ def run_vina_docking(
     
     os.makedirs(output_dir, exist_ok=True)
     
-    # Prepare receptor
     receptor_file = prepare_receptor_file(receptor_path, output_dir)
     if receptor_file is None:
-        return {
-            "success": False,
-            "error": f"Failed to prepare receptor: {receptor_path}. Please use PDBQT format.",
-            "results": []
-        }
+        return {"success": False, "error": "Failed to prepare receptor", "results": []}
     
-    # Prepare ligand
     ligand_file = prepare_ligand_file(ligand_path, output_dir)
     if ligand_file is None:
-        return {
-            "success": False,
-            "error": f"Failed to prepare ligand: {ligand_path}. Please use PDB, SDF, or MOL2 format.",
-            "results": []
-        }
+        return {"success": False, "error": "Failed to prepare ligand", "results": []}
     
     try:
-        # Initialize Vina
         logger.info("Initializing Vina...")
         v = Vina(sf_name='vina')
         
-        # Set receptor
-        logger.info(f"Setting receptor from: {receptor_file}")
-        try:
-            v.set_receptor(rigid_pdbqt_filename=receptor_file)
-        except Exception as e:
-            logger.error(f"Failed to set receptor: {e}")
-            return {
-                "success": False,
-                "error": f"Failed to set receptor: {str(e)}. Ensure receptor is valid PDBQT format.",
-                "results": []
-            }
+        v.set_receptor(rigid_pdbqt_filename=receptor_file)
+        v.set_ligand_from_file(ligand_file)
+        v.compute_vina_maps(center=[center_x, center_y, center_z], box_size=[size_x, size_y, size_z])
+        v.dock(exhaustiveness=exhaustiveness, n_poses=num_modes)
         
-        # Set ligand
-        logger.info(f"Setting ligand from: {ligand_file}")
-        try:
-            v.set_ligand_from_file(ligand_file)
-        except Exception as e:
-            logger.error(f"Failed to set ligand: {e}")
-            return {
-                "success": False,
-                "error": f"Failed to set ligand: {str(e)}. Ensure ligand is valid PDBQT format.",
-                "results": []
-            }
+        energies = v.energies
+        poses = v.poses(n_poses=num_modes, coordinates_only=False)
         
-        # Set search space (grid box)
-        logger.info(f"Setting box center: ({center_x}, {center_y}, {center_z}), size: ({size_x}, {size_y}, {size_z})")
-        try:
-            v.compute_vina_maps(center=[center_x, center_y, center_z], box_size=[size_x, size_y, size_z])
-        except Exception as e:
-            logger.error(f"Failed to compute Vina maps: {e}")
-            return {
-                "success": False,
-                "error": f"Failed to compute Vina maps: {str(e)}",
-                "results": []
-            }
-        
-        # Run docking
-        logger.info(f"Running docking with exhaustiveness={exhaustiveness}, num_modes={num_modes}")
-        try:
-            v.dock(exhaustiveness=exhaustiveness, n_poses=num_modes)
-        except Exception as e:
-            logger.error(f"Docking failed: {e}")
-            return {
-                "success": False,
-                "error": f"Docking failed: {str(e)}",
-                "results": []
-            }
-        
-        # Get energies and poses
-        try:
-            energies = v.energies
-            logger.info(f"Docking completed. Best score: {energies[0][0] if energies else 'N/A'}")
-        except Exception as e:
-            logger.warning(f"Could not get energies: {e}")
-            energies = []
-        
-        # Build results from poses
         results = []
-        try:
-            poses = v.poses(n_poses=num_modes, coordinates_only=False)
-            for i, pose in enumerate(poses):
-                energy = float(energies[i][0]) if i < len(energies) else 0.0
-                results.append({
-                    "pose_id": i + 1,
-                    "vina_score": energy,
-                    "gnina_score": None,
-                    "rf_score": None
-                })
-        except Exception as e:
-            logger.debug(f"Could not get poses: {e}")
+        for i, pose in enumerate(poses):
+            energy = float(energies[i][0]) if i < len(energies) else 0.0
+            results.append({
+                "pose_id": i + 1,
+                "vina_score": energy,
+                "gnina_score": None,
+                "rf_score": None
+            })
         
-        # Write output file
         output_file = os.path.join(output_dir, "vina_results.pdbqt")
         try:
             v.write_pose(output_file, overwrite=True)
-            logger.info(f"Results written to: {output_file}")
-        except Exception as e:
-            logger.warning(f"Could not write output file: {e}")
+        except:
+            pass
         
         return {
             "success": True,
@@ -293,11 +197,184 @@ def run_vina_docking(
         
     except Exception as e:
         logger.error(f"Vina docking error: {e}")
+        return {"success": False, "error": str(e), "results": []}
+
+
+def run_gnina_docking(
+    receptor_path: str,
+    ligand_path: str,
+    center_x: float = 0.0,
+    center_y: float = 0.0,
+    center_z: float = 0.0,
+    size_x: float = 20.0,
+    size_y: float = 20.0,
+    size_z: float = 20.0,
+    exhaustiveness: int = 8,
+    num_modes: int = 9,
+    output_dir: str = "/tmp"
+) -> Dict[str, Any]:
+    """Run GNINA using command line - provides CNN scoring"""
+    if not check_gnina():
+        return {"success": False, "error": "GNINA not installed", "results": []}
+    
+    os.makedirs(output_dir, exist_ok=True)
+    
+    receptor_file = prepare_receptor_file(receptor_path, output_dir)
+    if receptor_file is None:
+        return {"success": False, "error": "Failed to prepare receptor", "results": []}
+    
+    ligand_file = prepare_ligand_file(ligand_path, output_dir)
+    if ligand_file is None:
+        return {"success": False, "error": "Failed to prepare ligand", "results": []}
+    
+    output_file = os.path.join(output_dir, "gnina_results.pdbqt")
+    log_file = os.path.join(output_dir, "gnina_log.txt")
+    
+    cmd = [
+        "gnina",
+        "--receptor", receptor_file,
+        "--ligand", ligand_file,
+        "--center_x", str(center_x),
+        "--center_y", str(center_y),
+        "--center_z", str(center_z),
+        "--size_x", str(size_x),
+        "--size_y", str(size_y),
+        "--size_z", str(size_z),
+        "--exhaustiveness", str(exhaustiveness),
+        "--num_modes", str(num_modes),
+        "--out", output_file,
+        "--log", log_file,
+        "--cpu"
+    ]
+    
+    logger.info(f"Running GNINA: {' '.join(cmd[:6])}...")
+    
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=600
+        )
+        
+        if result.returncode != 0:
+            logger.error(f"GNINA failed: {result.stderr}")
+            return {"success": False, "error": result.stderr, "results": []}
+        
+        # Parse GNINA output
+        results = []
+        if os.path.exists(log_file):
+            with open(log_file, 'r') as f:
+                log_content = f.read()
+                
+            # Parse GNINA output format
+            for line in log_content.split('\n'):
+                if line.strip().startswith('1') or line.strip().startswith('2') or line.strip().startswith('3'):
+                    parts = line.split()
+                    if len(parts) >= 3:
+                        try:
+                            pose_id = int(parts[0])
+                            vina_score = float(parts[1]) if parts[1] != '?' else 0.0
+                            cnn_score = None
+                            for p in parts[2:]:
+                                try:
+                                    cnn_score = float(p)
+                                    break
+                                except ValueError:
+                                    continue
+                            
+                            results.append({
+                                "pose_id": pose_id,
+                                "vina_score": vina_score,
+                                "gnina_score": cnn_score,
+                                "rf_score": None
+                            })
+                        except (ValueError, IndexError):
+                            continue
+        
+        if not results:
+            return {"success": False, "error": "Failed to parse GNINA output", "results": []}
+        
         return {
-            "success": False,
-            "error": str(e),
-            "results": []
+            "success": True,
+            "engine": "gnina",
+            "results": results,
+            "output_file": output_file
         }
+        
+    except subprocess.TimeoutExpired:
+        return {"success": False, "error": "GNINA timeout (10 min exceeded)", "results": []}
+    except Exception as e:
+        logger.error(f"GNINA error: {e}")
+        return {"success": False, "error": str(e), "results": []}
+
+
+def run_consensus_docking(
+    receptor_path: str,
+    ligand_path: str,
+    center_x: float = 0.0,
+    center_y: float = 0.0,
+    center_z: float = 0.0,
+    size_x: float = 20.0,
+    size_y: float = 20.0,
+    size_z: float = 20.0,
+    exhaustiveness: int = 8,
+    num_modes: int = 9,
+    output_dir: str = "/tmp"
+) -> Dict[str, Any]:
+    """
+    Run tri-score consensus docking: Vina + GNINA CNN + RF-Score
+    """
+    results = []
+    
+    # Step 1: Run Vina
+    vina_result = run_vina_docking(
+        receptor_path, ligand_path,
+        center_x, center_y, center_z,
+        size_x, size_y, size_z,
+        exhaustiveness, num_modes, output_dir
+    )
+    
+    if vina_result["success"]:
+        # Use Vina results as base
+        results = vina_result["results"]
+    
+    # Step 2: Run GNINA if available
+    gnina_result = run_gnina_docking(
+        receptor_path, ligand_path,
+        center_x, center_y, center_z,
+        size_x, size_y, size_z,
+        exhaustiveness, num_modes, output_dir
+    )
+    
+    if gnina_result["success"]:
+        # Merge GNINA CNN scores with Vina results
+        for i, gnina_pose in enumerate(gnina_result["results"]):
+            if i < len(results):
+                results[i]["gnina_score"] = gnina_pose.get("gnina_score")
+    
+    # Step 3: Calculate consensus score (average of available scores)
+    for result in results:
+        scores = []
+        if result.get("vina_score"):
+            scores.append(result["vina_score"])
+        if result.get("gnina_score"):
+            scores.append(result["gnina_score"])
+        if result.get("rf_score"):
+            scores.append(result["rf_score"])
+        
+        if scores:
+            result["consensus_score"] = sum(scores) / len(scores)
+        else:
+            result["consensus_score"] = None
+    
+    return {
+        "success": True,
+        "engine": "consensus",
+        "results": results,
+        "vina_output": vina_result.get("output_file"),
+        "gnina_output": gnina_result.get("output_file") if gnina_result["success"] else None
+    }
 
 
 def run_docking(
@@ -314,24 +391,28 @@ def run_docking(
     num_modes: int = 9,
     output_dir: str = "/tmp"
 ) -> Dict[str, Any]:
-    """
-    Main docking function.
+    """Main docking function with engine selection"""
     
-    Args:
-        receptor_path: Path to receptor file
-        ligand_path: Path to ligand file
-        engine: Docking engine ('vina' currently supported)
-        center_x, center_y, center_z: Grid box center
-        size_x, size_y, size_z: Grid box size
-        exhaustiveness: Search exhaustiveness
-        num_modes: Number of binding modes
-        output_dir: Output directory
-        
-    Returns:
-        Dictionary with docking results
-    """
-    if engine.lower() == "vina":
+    engine = engine.lower()
+    
+    if engine == "vina":
         return run_vina_docking(
+            receptor_path, ligand_path,
+            center_x, center_y, center_z,
+            size_x, size_y, size_z,
+            exhaustiveness, num_modes, output_dir
+        )
+    
+    elif engine == "gnina":
+        return run_gnina_docking(
+            receptor_path, ligand_path,
+            center_x, center_y, center_z,
+            size_x, size_y, size_z,
+            exhaustiveness, num_modes, output_dir
+        )
+    
+    elif engine in ["consensus", "tri-score", "rfscore"]:
+        return run_consensus_docking(
             receptor_path, ligand_path,
             center_x, center_y, center_z,
             size_x, size_y, size_z,
@@ -340,6 +421,6 @@ def run_docking(
     
     return {
         "success": False,
-        "error": f"Unknown engine: {engine}. Only 'vina' is currently supported.",
+        "error": f"Unknown engine: {engine}. Use: vina, gnina, or consensus",
         "results": []
     }

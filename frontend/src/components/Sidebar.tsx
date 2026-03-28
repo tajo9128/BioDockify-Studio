@@ -16,6 +16,7 @@ const navItems = [
       { path: '/results', label: 'Results', icon: '📊' },
       { path: '/rmsd', label: 'RMSD Analysis', icon: '🎯' },
       { path: '/interactions', label: 'Interactions', icon: '🔗' },
+      { path: '/pharmacophore', label: 'Pharmacophore', icon: '🧬' },
     ],
   },
   {
@@ -34,7 +35,7 @@ export function Sidebar() {
       {/* Logo */}
       <div className="px-5 py-6 bg-background-dark">
         <h1 className="text-white text-xl font-bold">Docking Studio</h1>
-        <p className="text-gray-500 text-xs mt-0.5">Version 1.2.3</p>
+        <p className="text-gray-500 text-xs mt-0.5">Version 2.0.0</p>
       </div>
 
       {/* Navigation */}
