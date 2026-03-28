@@ -27,4 +27,4 @@ COPY . .
 RUN mkdir -p /app/storage /app/uploads
 
 # Start Celery worker
-CMD ["celery", "-A", "worker", "worker", "--loglevel=info", "--concurrency=4"]
+CMD ["celery", "-A", "worker:app", "worker", "--loglevel=info", "--concurrency=4"]

@@ -36,7 +36,7 @@ RUN pip install --no-cache-dir \
 
 WORKDIR /app
 
-COPY rdkit_service/ /app/
+COPY . .
 
 EXPOSE 8003
 

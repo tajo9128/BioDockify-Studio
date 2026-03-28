@@ -37,7 +37,7 @@ RUN pip install --no-cache-dir \
 
 WORKDIR /app
 
-COPY docking_service/ /app/
+COPY . .
 
 EXPOSE 8002
 

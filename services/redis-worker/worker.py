@@ -30,6 +30,8 @@ celery_app = Celery(
     include=["worker"]
 )
 
+app = celery_app
+
 celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
@@ -44,7 +46,7 @@ celery_app.conf.update(
 )
 
 
-@celery_app.task(bind=True, name="docking.run")
+@app.task(bind=True, name="docking.run")
 def run_docking(self, job_id: str, parameters: dict):
     """Run molecular docking job"""
     logger.info(f"Starting docking job: {job_id}")
@@ -66,7 +68,7 @@ def run_docking(self, job_id: str, parameters: dict):
         return {"job_id": job_id, "status": "failed", "error": str(e)}
 
 
-@celery_app.task(bind=True, name="docking.batch")
+@app.task(bind=True, name="docking.batch")
 def run_batch_docking(self, job_id: str, parameters: dict):
     """Run batch docking for multiple ligands"""
     logger.info(f"Starting batch docking job: {job_id}")
@@ -88,7 +90,7 @@ def run_batch_docking(self, job_id: str, parameters: dict):
         return {"job_id": job_id, "status": "failed", "error": str(e)}
 
 
-@celery_app.task(bind=True, name="rdkit.process")
+@app.task(bind=True, name="rdkit.process")
 def process_molecule(self, job_id: str, parameters: dict):
     """Process molecule with RDKit"""
     logger.info(f"Starting RDKit processing job: {job_id}")
@@ -110,7 +112,7 @@ def process_molecule(self, job_id: str, parameters: dict):
         return {"job_id": job_id, "status": "failed", "error": str(e)}
 
 
-@celery_app.task(bind=True, name="pharmacophore.generate")
+@app.task(bind=True, name="pharmacophore.generate")
 def generate_pharmacophore(self, job_id: str, parameters: dict):
     """Generate pharmacophore model"""
     logger.info(f"Starting pharmacophore generation job: {job_id}")
@@ -132,7 +134,7 @@ def generate_pharmacophore(self, job_id: str, parameters: dict):
         return {"job_id": job_id, "status": "failed", "error": str(e)}
 
 
-@celery_app.task(bind=True, name="pharmacophore.screen")
+@app.task(bind=True, name="pharmacophore.screen")
 def screen_library(self, job_id: str, parameters: dict):
     """Screen compound library against pharmacophore"""
     logger.info(f"Starting pharmacophore screening job: {job_id}")
@@ -154,7 +156,7 @@ def screen_library(self, job_id: str, parameters: dict):
         return {"job_id": job_id, "status": "failed", "error": str(e)}
 
 
-@celery_app.task(bind=True, name="pipeline.full_screening")
+@app.task(bind=True, name="pipeline.full_screening")
 def run_full_screening_pipeline(self, job_id: str, parameters: dict):
     """Run full screening pipeline: pharmacophore -> docking -> ranking"""
     logger.info(f"Starting full screening pipeline job: {job_id}")
@@ -163,12 +165,12 @@ def run_full_screening_pipeline(self, job_id: str, parameters: dict):
         
         pipeline_steps = []
         
-        step1 = generate_pharmacophore.delay(job_id + "-step1", parameters.get("pharmacophore_params", {}))
+        step1 = app.send_task("pharmacophore.generate", args=[job_id + "-step1", parameters.get("pharmacophore_params", {})])
         pipeline_steps.append(("pharmacophore", step1.id))
         
         self.update_state(state="RUNNING", meta={"message": "Pharmacophore generated, starting docking"})
         
-        step2 = run_batch_docking.delay(job_id + "-step2", parameters.get("docking_params", {}))
+        step2 = app.send_task("docking.batch", args=[job_id + "-step2", parameters.get("docking_params", {})])
         pipeline_steps.append(("docking", step2.id))
         
         self.update_state(state="RUNNING", meta={"message": "Docking complete, ranking results"})
@@ -187,4 +189,4 @@ def run_full_screening_pipeline(self, job_id: str, parameters: dict):
 
 
 if __name__ == "__main__":
-    celery_app.start()
+    app.start()

@@ -126,3 +126,4 @@ results.sarif
 *.pem
 *.key
 credentials.json
+frontend/tsconfig.tsbuildinfo
