@@ -6,3 +6,6 @@ pydantic==2.5.3
 sqlalchemy==2.0.25
 psycopg2-binary==2.9.9
 celery==5.3.6
+anthropic>=0.45.0
+openai>=2.8.0
+loguru>=0.7.3
