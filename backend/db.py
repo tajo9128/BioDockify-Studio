@@ -3,11 +3,15 @@ import os
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "storage", "jobs.db")
+# Determine paths correctly based on where the app is running from
+_BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+_APP_DIR = os.path.dirname(_BACKEND_DIR) if os.path.basename(_BACKEND_DIR) == "backend" else _BACKEND_DIR
+STORAGE_DIR = os.path.join(_APP_DIR, "backend", "storage")
+DB_PATH = os.path.join(STORAGE_DIR, "jobs.db")
 
 def init_db():
     """Initialize SQLite database for job storage"""
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    os.makedirs(STORAGE_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 

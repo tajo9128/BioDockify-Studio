@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Card, Button, Input, ProgressBar, Badge, Tabs, TabPanel } from '@/components/ui'
 import { useDockingStream } from '@/hooks'
 import { startDocking, cancelDocking } from '@/api/docking'
+import { uploadFile } from '@/api/upload'
 import type { DockingConfig } from '@/lib/types'
 
 export function Docking() {
@@ -12,7 +13,7 @@ export function Docking() {
   const [ligandFiles, setLigandFiles] = useState<File[]>([])
   const [receptorName, setReceptorName] = useState('')
   const [ligandName, setLigandName] = useState('')
-  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
   const [config, setConfig] = useState<DockingConfig>({
     center_x: 0,
@@ -34,6 +35,7 @@ export function Docking() {
     if (!file) return
     setReceptorFile(file)
     setReceptorName(file.name)
+    setUploadError(null)
   }, [])
 
   const handleLigandUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -41,19 +43,24 @@ export function Docking() {
     if (!files.length) return
     setLigandFiles(files)
     setLigandName(`${files.length} files selected`)
+    setUploadError(null)
   }, [])
 
   const handleStartDocking = async () => {
     if (!receptorFile || ligandFiles.length === 0) return
 
-    setUploading(true)
+    setUploadError(null)
     try {
+      // First upload the files to the server
+      const uploadResult = await uploadFile(receptorFile)
+      const receptorPath = uploadResult.path
+      
+      const ligandUploadResult = await uploadFile(ligandFiles[0])
+      const ligandPath = ligandUploadResult.path
+
+      // Start docking job
       const jobId = `docking-${Date.now()}`
       setCurrentJobId(jobId)
-
-      // For now, use placeholder paths - in production, upload files first
-      const receptorPath = `/uploads/${receptorFile.name}`
-      const ligandPath = `/uploads/${ligandFiles[0].name}`
 
       await startDocking(jobId, config.batch_size, receptorPath, ligandPath, {
         center_x: config.center_x,
@@ -69,8 +76,7 @@ export function Docking() {
       setActiveTab('progress')
     } catch (err) {
       console.error('Failed to start docking:', err)
-    } finally {
-      setUploading(false)
+      setUploadError(err instanceof Error ? err.message : 'Failed to start docking')
     }
   }
 
@@ -371,6 +377,12 @@ export function Docking() {
                   {error}
                 </div>
               )}
+
+              {uploadError && (
+                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                  {uploadError}
+                </div>
+              )}
             </Card>
           </div>
         )}
@@ -387,10 +399,10 @@ export function Docking() {
             </div>
             <Button
               onClick={handleStartDocking}
-              disabled={!receptorFile || ligandFiles.length === 0 || uploading}
+              disabled={!receptorFile || ligandFiles.length === 0 || !!uploadError}
               className="bg-gradient-to-r from-primary to-secondary"
             >
-              {uploading ? 'Starting...' : '▶ Start Docking'}
+              {uploadError ? 'Error' : '▶ Start Docking'}
             </Button>
           </div>
         )}

@@ -5,7 +5,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 try:
-    from Bio.PDB import PDBParser, Selection, Atom
+    from Bio.PDB.PDBParser import PDBParser
     BIOPYTHON_AVAILABLE = True
 except ImportError:
     BIOPYTHON_AVAILABLE = False

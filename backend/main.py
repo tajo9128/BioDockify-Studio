@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional, List
 import os
+import re
 import uuid
 import json
 import logging
@@ -55,18 +56,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-STORAGE_DIR = os.path.join(os.path.dirname(__file__), "storage")
+# Determine base directory - works whether running from /app or /app/backend
+_BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+_APP_DIR = os.path.dirname(_BACKEND_DIR) if os.path.basename(_BACKEND_DIR) == "backend" else _BACKEND_DIR
+
+STORAGE_DIR = os.path.join(_APP_DIR, "backend", "storage")
 os.makedirs(STORAGE_DIR, exist_ok=True)
 
-# Static files are in backend/static relative to the app root
-# When uvicorn runs from /app, __file__ is /app/main.py
-# But the actual static files are at /app/backend/static
-import sys
-if '/app' in sys.path or True:  # Always check for app prefix
-    _base = '/app'
-else:
-    _base = os.path.dirname(__file__)
-STATIC_DIR = os.path.join(_base, "backend", "static")
+STATIC_DIR = os.path.join(_APP_DIR, "backend", "static")
 ASSETS_DIR = os.path.join(STATIC_DIR, "assets")
 
 logger.info(f"Static directory: {STATIC_DIR}")
@@ -177,7 +174,7 @@ def health():
                 ollama_models = [m.get("name", "") for m in data.get("models", [])]
                 ollama_status = "available"
                 break
-        except:
+        except Exception:
             time.sleep(0.5)
 
     return {
@@ -388,27 +385,39 @@ def remove_job(job_uuid: str):
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     """Upload a file"""
-    file_path = os.path.join(STORAGE_DIR, file.filename)
+    # Sanitize filename to prevent path traversal attacks
+    original_filename = file.filename or "unnamed_file"
+    safe_filename = re.sub(r'[^a-zA-Z0-9._-]', '_', original_filename)
+    file_path = os.path.join(STORAGE_DIR, safe_filename)
+
+    # Handle duplicate filenames
+    if os.path.exists(file_path):
+        name, ext = os.path.splitext(safe_filename)
+        safe_filename = f"{name}_{uuid.uuid4().hex[:8]}{ext}"
+        file_path = os.path.join(STORAGE_DIR, safe_filename)
 
     with open(file_path, "wb") as f:
         content = await file.read()
         f.write(content)
 
-    return {"filename": file.filename, "path": file_path}
+    return {"filename": safe_filename, "path": file_path}
 
 
 @app.get("/download/{filename}")
 def download_file(filename: str):
     """Download a file"""
-    file_path = os.path.join(STORAGE_DIR, filename)
+    # Sanitize filename to prevent path traversal
+    safe_filename = os.path.basename(filename)
+    file_path = os.path.join(STORAGE_DIR, safe_filename)
 
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found")
 
-    with open(file_path, "r") as f:
+    # Read as binary and return as base64 or just return the file
+    with open(file_path, "rb") as f:
         content = f.read()
 
-    return {"filename": filename, "content": content}
+    return {"filename": safe_filename, "content": content.decode("latin-1")}
 
 
 @app.get("/security/status")
