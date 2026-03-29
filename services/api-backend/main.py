@@ -30,6 +30,8 @@ PHARMACOPHORE_SERVICE_URL = os.getenv(
 )
 QSAR_SERVICE_URL = os.getenv("QSAR_SERVICE_URL", "http://qsar-service:8005")
 MD_SERVICE_URL = os.getenv("MD_SERVICE_URL", "http://md-service:8000")
+SENTINEL_SERVICE_URL = os.getenv("SENTINEL_SERVICE_URL", "http://sentinel-service:8000")
+ANALYSIS_SERVICE_URL = os.getenv("ANALYSIS_SERVICE_URL", "http://analysis-service:8000")
 BRAIN_SERVICE_URL = os.getenv("BRAIN_SERVICE_URL", "http://brain-service:8000")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
 TRAINING_TIMEOUT = int(os.getenv("TRAINING_TIMEOUT", "300"))
@@ -115,6 +117,8 @@ async def root():
             "pharmacophore": "/pharmacophore",
             "qsar": "/qsar",
             "md": "/md",
+            "sentinel": "/sentinel",
+            "analysis": "/analysis",
             "brain": "/brain",
         },
     }
@@ -1408,6 +1412,187 @@ def auto_remember_from_job(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ============================================================
+# Sentinel Service proxies (Supervisor)
+# ============================================================
+
+
+class LigandRecordInput(BaseModel):
+    ligand_id: str
+    smiles: Optional[str] = None
+    vina_score: Optional[float] = None
+    gnina_score: Optional[float] = None
+    rf_score: Optional[float] = None
+    consensus_score: Optional[float] = None
+    md_stability: Optional[float] = None
+    md_time_ns: Optional[float] = None
+    rmsd_from_crystal: Optional[float] = None
+    h_bond_count: Optional[int] = None
+    hydrophobic_count: Optional[int] = None
+    mw: Optional[float] = None
+    logp: Optional[float] = None
+    tpsa: Optional[float] = None
+    num_rotatable_bonds: Optional[int] = None
+
+
+class RankingRequestInput(BaseModel):
+    ligands: List[LigandRecordInput]
+    weights: Optional[Dict[str, float]] = None
+
+
+@app.post("/sentinel/monitor")
+async def sentinel_monitor(job_id: str, service: str):
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.post(
+                f"{SENTINEL_SERVICE_URL}/monitor/job",
+                params={"job_id": job_id, "service": service},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/sentinel/retry")
+async def sentinel_retry(job_id: str, service: str):
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.post(
+                f"{SENTINEL_SERVICE_URL}/retry/job",
+                params={"job_id": job_id, "service": service},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/sentinel/escalate")
+async def sentinel_escalate(job_id: str, service: str, reason: str):
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.post(
+                f"{SENTINEL_SERVICE_URL}/escalate",
+                params={"job_id": job_id, "service": service, "reason": reason},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/sentinel/queue/status")
+async def sentinel_queue_status():
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(f"{SENTINEL_SERVICE_URL}/queue/status")
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/sentinel/health")
+async def sentinel_health():
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(f"{SENTINEL_SERVICE_URL}/health")
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================
+# Analysis Service proxies (Insight Generator)
+# ============================================================
+
+
+@app.post("/analysis/rank")
+async def analysis_rank(request: RankingRequestInput):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            payload = {
+                "ligands": [l.model_dump() for l in request.ligands],
+                "weights": request.weights,
+            }
+            response = await client.post(f"{ANALYSIS_SERVICE_URL}/rank", json=payload)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/analysis/filter/admet")
+async def analysis_admet(ligands: List[LigandRecordInput]):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.post(
+                f"{ANALYSIS_SERVICE_URL}/filter/admet",
+                json=[l.model_dump() for l in ligands],
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/analysis/consensus")
+async def analysis_consensus(ligands: List[LigandRecordInput]):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.post(
+                f"{ANALYSIS_SERVICE_URL}/consensus",
+                json=[l.model_dump() for l in ligands],
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/analysis/report")
+async def analysis_report(
+    job_uuid: str, ligand_ids: List[str], summary: Optional[Dict] = None
+):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.post(
+                f"{ANALYSIS_SERVICE_URL}/report",
+                params={"job_uuid": job_uuid},
+                json={"ligand_ids": ligand_ids, "summary": summary},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/analysis/interactions/summary")
+async def analysis_interactions_summary(interactions: List[Dict[str, Any]]):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.post(
+                f"{ANALYSIS_SERVICE_URL}/interactions/summary", json=interactions
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/analysis/health")
+async def analysis_health():
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(f"{ANALYSIS_SERVICE_URL}/health")
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/rdkit/smiles-to-3d")
 async def smiles_to_3d(smiles: str, name: Optional[str] = None):
     """Convert SMILES to 3D structure"""
@@ -1577,6 +1762,8 @@ async def get_stats():
                 "pharmacophore_service": "unknown",
                 "qsar_service": "unknown",
                 "md_service": "unknown",
+                "sentinel_service": "unknown",
+                "analysis_service": "unknown",
                 "brain_service": "unknown",
             },
         }
@@ -1588,6 +1775,8 @@ async def get_stats():
                 ("pharmacophore_service", PHARMACOPHORE_SERVICE_URL),
                 ("qsar_service", QSAR_SERVICE_URL),
                 ("md_service", MD_SERVICE_URL),
+                ("sentinel_service", SENTINEL_SERVICE_URL),
+                ("analysis_service", ANALYSIS_SERVICE_URL),
                 ("brain_service", BRAIN_SERVICE_URL),
             ]:
                 try:
