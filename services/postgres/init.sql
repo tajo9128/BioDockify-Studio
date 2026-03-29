@@ -101,6 +101,49 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS user_profiles (
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR(255) UNIQUE NOT NULL,
+    display_name VARCHAR(255),
+    email VARCHAR(255),
+    platform VARCHAR(50),
+    preferences JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_profiles_user_id ON user_profiles(user_id);
+
+CREATE TABLE IF NOT EXISTS memory_entries (
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    category VARCHAR(50) DEFAULT 'general',
+    key VARCHAR(255) NOT NULL,
+    value TEXT,
+    confidence FLOAT DEFAULT 1.0,
+    tags TEXT[],
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, category, key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_user ON memory_entries(user_id);
+CREATE INDEX IF NOT EXISTS idx_memory_category ON memory_entries(user_id, category);
+CREATE INDEX IF NOT EXISTS idx_memory_tags ON memory_entries USING GIN(tags);
+
+CREATE TABLE IF NOT EXISTS conversation_history (
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    role VARCHAR(20) NOT NULL,
+    content TEXT NOT NULL,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_user ON conversation_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_recent ON conversation_history(user_id, created_at DESC);
+
 -- Grant permissions
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO dockuser;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO dockuser;

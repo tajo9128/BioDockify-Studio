@@ -87,7 +87,7 @@ def _get_job_status(job_id: str) -> Optional[Dict]:
 
 
 def _persist_to_db(job_id: str, request: "DynamicsRequest", result: Dict[str, Any]):
-    """Persist completed MD job result to PostgreSQL via api-backend."""
+    """Persist completed MD job result to PostgreSQL and Nanobot memory via api-backend."""
     try:
         payload = {
             "job_uuid": job_id,
@@ -103,11 +103,28 @@ def _persist_to_db(job_id: str, request: "DynamicsRequest", result: Dict[str, An
             "final_frame_path": result.get("final_frame_path"),
             "energy_csv_path": result.get("energy_csv_path"),
         }
-        with httpx.Client(timeout=10.0) as client:
+        result_summary = (
+            f"ns={result.get('sim_time_ns', 0):.2f}, "
+            f"frames={result.get('n_frames', 0)}, "
+            f"avg_energy={result.get('avg_energy_kj_mol', 0):.1f}kJ/mol, "
+            f"T={result.get('temperature_K', 0)}K, "
+            f"solvent={result.get('solvent_model', 'N/A')}"
+        )
+        with httpx.Client(timeout=15.0) as client:
             client.post(f"{API_BACKEND_URL}/db/md/save", json=payload)
-        logger.info(f"Persisted MD result to database for job {job_id}")
+            client.post(
+                f"{API_BACKEND_URL}/memory/auto记住",
+                params={
+                    "user_id": job_id,
+                    "job_uuid": job_id,
+                    "job_type": "md",
+                    "job_name": request.name,
+                    "result_summary": result_summary,
+                },
+            )
+        logger.info(f"Persisted MD result and memory for job {job_id}")
     except Exception as e:
-        logger.warning(f"Failed to persist MD result to database: {e}")
+        logger.warning(f"Failed to persist MD result/memory: {e}")
 
 
 @asynccontextmanager

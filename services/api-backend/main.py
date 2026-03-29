@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 import httpx
 
 from .db import engine, get_db, Base
-from .models import Job, MDResult
+from .models import Job, MDResult, UserProfile, MemoryEntry, ConversationHistory
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -1042,6 +1042,370 @@ def list_db_jobs(limit: int = 50, db: Session = Depends(get_db)):
         ],
         "count": len(jobs),
     }
+
+
+# ============================================================
+# Nanobot Memory - User profiles, long-term memory, conversation history
+# ============================================================
+
+
+class MemoryEntryRequest(BaseModel):
+    user_id: str
+    category: str = "general"
+    key: str
+    value: str
+    confidence: float = 1.0
+    tags: Optional[List[str]] = None
+    metadata: Optional[dict] = None
+
+
+class ConversationEntryRequest(BaseModel):
+    user_id: str
+    role: str
+    content: str
+    metadata: Optional[dict] = None
+
+
+class UserProfileRequest(BaseModel):
+    user_id: str
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+    platform: Optional[str] = None
+    preferences: Optional[dict] = None
+
+
+@app.post("/memory/profile")
+def upsert_user_profile(request: UserProfileRequest, db: Session = Depends(get_db)):
+    """Create or update a user profile."""
+    try:
+        profile = (
+            db.query(UserProfile).filter(UserProfile.user_id == request.user_id).first()
+        )
+        if profile:
+            for field in ["display_name", "email", "platform", "preferences"]:
+                val = getattr(request, field, None)
+                if val is not None:
+                    setattr(profile, field, val)
+        else:
+            profile = UserProfile(
+                user_id=request.user_id,
+                display_name=request.display_name,
+                email=request.email,
+                platform=request.platform,
+                preferences=request.preferences or {},
+            )
+            db.add(profile)
+        db.commit()
+        db.refresh(profile)
+        return {"success": True, "user_id": profile.user_id}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/memory/profile/{user_id}")
+def get_user_profile(user_id: str, db: Session = Depends(get_db)):
+    """Get a user profile."""
+    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail=f"Profile for {user_id} not found")
+    return {
+        "user_id": profile.user_id,
+        "display_name": profile.display_name,
+        "email": profile.email,
+        "platform": profile.platform,
+        "preferences": profile.preferences,
+        "created_at": profile.created_at.isoformat() if profile.created_at else None,
+        "updated_at": profile.updated_at.isoformat() if profile.updated_at else None,
+    }
+
+
+@app.post("/memory/remember")
+def add_memory_entry(request: MemoryEntryRequest, db: Session = Depends(get_db)):
+    """Store a long-term memory entry for a user."""
+    try:
+        existing = (
+            db.query(MemoryEntry)
+            .filter(
+                MemoryEntry.user_id == request.user_id,
+                MemoryEntry.category == request.category,
+                MemoryEntry.key == request.key,
+            )
+            .first()
+        )
+        if existing:
+            existing.value = request.value
+            existing.confidence = request.confidence
+            if request.tags is not None:
+                existing.tags = request.tags
+            if request.metadata is not None:
+                existing.metadata = request.metadata
+        else:
+            entry = MemoryEntry(
+                user_id=request.user_id,
+                category=request.category,
+                key=request.key,
+                value=request.value,
+                confidence=request.confidence,
+                tags=request.tags or [],
+                metadata=request.metadata or {},
+            )
+            db.add(entry)
+        db.commit()
+        return {"success": True, "user_id": request.user_id, "key": request.key}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/memory/{user_id}")
+def get_all_memory(
+    user_id: str, category: Optional[str] = None, db: Session = Depends(get_db)
+):
+    """Retrieve all memory entries for a user, optionally filtered by category."""
+    query = db.query(MemoryEntry).filter(MemoryEntry.user_id == user_id)
+    if category:
+        query = query.filter(MemoryEntry.category == category)
+    entries = query.order_by(MemoryEntry.created_at.desc()).all()
+    return {
+        "user_id": user_id,
+        "entries": [
+            {
+                "id": e.id,
+                "category": e.category,
+                "key": e.key,
+                "value": e.value,
+                "confidence": e.confidence,
+                "tags": e.tags,
+                "metadata": e.metadata,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+            }
+            for e in entries
+        ],
+        "count": len(entries),
+    }
+
+
+@app.get("/memory/{user_id}/search")
+def search_memory(
+    user_id: str,
+    q: Optional[str] = None,
+    tags: Optional[str] = None,
+    category: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Search memory entries for a user by query, tags, or category."""
+    query = db.query(MemoryEntry).filter(MemoryEntry.user_id == user_id)
+    if category:
+        query = query.filter(MemoryEntry.category == category)
+    if q:
+        query = query.filter(
+            (MemoryEntry.key.ilike(f"%{q}%")) | (MemoryEntry.value.ilike(f"%{q}%"))
+        )
+    entries = query.order_by(
+        MemoryEntry.confidence.desc(), MemoryEntry.created_at.desc()
+    ).all()
+    if tags:
+        tag_list = [t.strip() for t in tags.split(",")]
+        entries = [e for e in entries if e.tags and any(t in e.tags for t in tag_list)]
+    return {
+        "user_id": user_id,
+        "query": q,
+        "entries": [
+            {
+                "id": e.id,
+                "category": e.category,
+                "key": e.key,
+                "value": e.value,
+                "confidence": e.confidence,
+                "tags": e.tags,
+                "metadata": e.metadata,
+            }
+            for e in entries
+        ],
+        "count": len(entries),
+    }
+
+
+@app.delete("/memory/{user_id}/{entry_id}")
+def delete_memory_entry(user_id: str, entry_id: int, db: Session = Depends(get_db)):
+    """Delete a specific memory entry."""
+    entry = (
+        db.query(MemoryEntry)
+        .filter(
+            MemoryEntry.id == entry_id,
+            MemoryEntry.user_id == user_id,
+        )
+        .first()
+    )
+    if not entry:
+        raise HTTPException(status_code=404, detail="Memory entry not found")
+    db.delete(entry)
+    db.commit()
+    return {"success": True}
+
+
+@app.post("/memory/conversation")
+def add_conversation_entry(
+    request: ConversationEntryRequest, db: Session = Depends(get_db)
+):
+    """Append a conversation turn to a user's chat history."""
+    try:
+        entry = ConversationHistory(
+            user_id=request.user_id,
+            role=request.role,
+            content=request.content,
+            metadata=request.metadata or {},
+        )
+        db.add(entry)
+        db.commit()
+        return {"success": True, "id": entry.id}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/memory/conversation/{user_id}")
+def get_conversation_history(
+    user_id: str, limit: int = 20, db: Session = Depends(get_db)
+):
+    """Get recent conversation history for a user."""
+    entries = (
+        db.query(ConversationHistory)
+        .filter(ConversationHistory.user_id == user_id)
+        .order_by(ConversationHistory.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    entries.reverse()
+    return {
+        "user_id": user_id,
+        "messages": [
+            {
+                "id": e.id,
+                "role": e.role,
+                "content": e.content,
+                "metadata": e.metadata,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+            }
+            for e in entries
+        ],
+        "count": len(entries),
+    }
+
+
+@app.get("/memory/history/{user_id}")
+def get_user_history_summary(user_id: str, db: Session = Depends(get_db)):
+    """Get a comprehensive history summary for a user: jobs, memory, conversations."""
+    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+    recent_jobs = (
+        db.query(Job)
+        .filter(Job.job_uuid.like(f"{user_id}%"))
+        .order_by(Job.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    recent_memory = (
+        db.query(MemoryEntry)
+        .filter(MemoryEntry.user_id == user_id)
+        .order_by(MemoryEntry.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    recent_convo = (
+        db.query(ConversationHistory)
+        .filter(ConversationHistory.user_id == user_id)
+        .order_by(ConversationHistory.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    return {
+        "user_id": user_id,
+        "profile": {
+            "display_name": profile.display_name if profile else None,
+            "platform": profile.platform if profile else None,
+        }
+        if profile
+        else None,
+        "recent_jobs": [
+            {
+                "job_uuid": j.job_uuid,
+                "job_name": j.job_name,
+                "job_type": j.job_type,
+                "status": j.status,
+                "created_at": j.created_at.isoformat() if j.created_at else None,
+            }
+            for j in recent_jobs
+        ],
+        "recent_memory": [
+            {
+                "category": e.category,
+                "key": e.key,
+                "value": e.value,
+                "confidence": e.confidence,
+                "tags": e.tags,
+            }
+            for e in recent_memory
+        ],
+        "recent_conversation": [
+            {
+                "role": e.role,
+                "content": e.content[:200],
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+            }
+            for e in reversed(recent_convo)
+        ],
+    }
+
+
+@app.post("/memory/auto记住")
+def auto_remember_from_job(
+    user_id: str,
+    job_uuid: str,
+    job_type: str,
+    job_name: str,
+    result_summary: str,
+    db: Session = Depends(get_db),
+):
+    """Automatically remember key facts from a completed job."""
+    try:
+        memory_entries = []
+        key_map = {
+            "docking": ("docking", ["best_score", "num_poses", "ligand"]),
+            "md": ("md", ["sim_time_ns", "temperature_K", "solvent_model"]),
+            "qsar": ("qsar", ["model_type", "cv_r2", "n_compounds"]),
+            "pharmacophore": ("pharmacophore", ["num_features"]),
+        }
+        cat, keys = key_map.get(job_type, ("general", []))
+        entry = MemoryEntry(
+            user_id=user_id,
+            category="jobs",
+            key=f"job:{job_uuid}",
+            value=f"{job_type} job '{job_name}' - {result_summary}",
+            confidence=1.0,
+            tags=[job_type, "job", "completed"],
+            metadata={"job_uuid": job_uuid, "job_name": job_name},
+        )
+        db.add(entry)
+        for k in keys:
+            memory_entries.append(
+                MemoryEntry(
+                    user_id=user_id,
+                    category=cat,
+                    key=k,
+                    value=f"From job {job_uuid}: {k}",
+                    confidence=0.9,
+                    tags=[job_type, "job_detail"],
+                    metadata={"job_uuid": job_uuid},
+                )
+            )
+        for me in memory_entries:
+            db.add(me)
+        db.commit()
+        return {"success": True, "entries_stored": 1 + len(memory_entries)}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/rdkit/smiles-to-3d")

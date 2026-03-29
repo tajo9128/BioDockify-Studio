@@ -2,7 +2,17 @@
 SQLAlchemy models mirroring the PostgreSQL schema in init.sql.
 """
 
-from sqlalchemy import Column, Integer, String, Float, Text, DateTime, ForeignKey, JSON
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Float,
+    Text,
+    DateTime,
+    ForeignKey,
+    JSON,
+    ARRAY,
+)
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
@@ -125,3 +135,42 @@ class MDResult(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     job = relationship("Job", back_populates="md_results")
+
+
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(255), unique=True, nullable=False, index=True)
+    display_name = Column(String(255), nullable=True)
+    email = Column(String(255), nullable=True)
+    platform = Column(String(50), nullable=True)
+    preferences = Column(JSON, default={})
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class MemoryEntry(Base):
+    __tablename__ = "memory_entries"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(255), nullable=False, index=True)
+    category = Column(String(50), default="general")
+    key = Column(String(255), nullable=False)
+    value = Column(Text, nullable=True)
+    confidence = Column(Float, default=1.0)
+    tags = Column(ARRAY(String), nullable=True)
+    metadata = Column(JSON, default={})
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ConversationHistory(Base):
+    __tablename__ = "conversation_history"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(255), nullable=False, index=True)
+    role = Column(String(20), nullable=False)
+    content = Column(Text, nullable=False)
+    metadata = Column(JSON, default={})
+    created_at = Column(DateTime, default=datetime.utcnow)
