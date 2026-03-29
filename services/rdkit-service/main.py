@@ -350,6 +350,13 @@ class PrepareProteinRequest(BaseModel):
     pH: float = 7.4
 
 
+class PrepareReceptorPDBQTRequest(BaseModel):
+    pdb_content: str
+    name: Optional[str] = "receptor"
+    remove_waters: bool = True
+    pH: float = 7.4
+
+
 @app.post("/prepare_protein")
 def prepare_protein(request: PrepareProteinRequest):
     """Prepare protein: remove waters, add hydrogens, return cleaned PDB"""
@@ -405,6 +412,240 @@ def prepare_protein(request: PrepareProteinRequest):
     except Exception as e:
         logger.error(f"Protein preparation error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/prepare_receptor_pdbqt")
+def prepare_receptor_pdbqt(request: PrepareReceptorPDBQTRequest):
+    """Prepare receptor with AMBER charges, return PDBQT for Vina/GNINA
+
+    Uses Discovery Studio-style approach:
+    1. Clean PDB structure (remove waters, add hydrogens at pH)
+    2. Assign AMBER ff charges via openmmforcefields (if available)
+    3. Convert to PDBQT with AutoDock4 atom types via Meeko
+    """
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import AllChem, SanitizeMolecule
+        import uuid
+
+        mol = Chem.MolFromPDBBlock(request.pdb_content, sanitize=False)
+        if mol is None:
+            return {"success": False, "error": "Invalid PDB content"}
+
+        try:
+            mol.SanitizeMolComputeProperties()
+        except Exception:
+            pass
+
+        if request.remove_waters:
+            waters = []
+            for atom in mol.GetAtoms():
+                try:
+                    elem = atom.GetSymbol()
+                    degree = atom.GetTotalDegree()
+                    if elem == "O" and degree == 1:
+                        waters.append(atom.GetIdx())
+                except:
+                    pass
+            if waters:
+                editor = Chem.RWMol(mol)
+                for idx in sorted(waters, reverse=True):
+                    editor.RemoveAtom(idx)
+                mol = editor.GetMol()
+
+        try:
+            mol = Chem.AddHs(mol, addCoords=True, pka=request.pH)
+        except Exception:
+            mol = Chem.AddHs(mol, addCoords=True)
+
+        safe_name = "".join(
+            c if c.isalnum() else "_" for c in (request.name or "receptor")
+        )
+        pdbqt_id = str(uuid.uuid4())[:8]
+        pdb_filename = f"{safe_name}_receptor_{pdbqt_id}.pdb"
+        pdbqt_filename = f"{safe_name}_receptor_{pdbqt_id}.pdbqt"
+        pdb_path = Path("/app/storage") / pdb_filename
+        pdbqt_path = Path("/app/storage") / pdbqt_filename
+        pdbqt_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(pdb_path, "w") as f:
+            f.write(Chem.MolToPDBBlock(mol))
+
+        try:
+            from meeko import PDBQTPreparationReceptor
+
+            prep = PDBQTPreparationReceptor()
+            pdbqt_string = prep.prepare(mol)
+
+            if isinstance(pdbqt_string, tuple):
+                pdbqt_string = pdbqt_string[0]
+
+            with open(pdbqt_path, "w") as f:
+                f.write(pdbqt_string)
+
+            return {
+                "success": True,
+                "pdbqt_path": str(pdbqt_path),
+                "pdb_path": str(pdb_path),
+                "method": "meeko_ad4",
+                "atoms": mol.GetNumAtoms(),
+            }
+        except (ImportError, AttributeError) as e:
+            logger.warning(f"Meeko AD4 prep unavailable: {e}")
+
+        try:
+            import parmed as pmd
+            from openmmforcefields.generators import AMBERTemplateGenerator
+
+            struct = pmd.toolsructure.Structure()
+            for atom in mol.GetAtoms():
+                idx = atom.GetIdx()
+                elem = atom.GetSymbol()
+                pos = mol.GetConformer(0).GetAtomPosition(idx)
+                struct.add_atom(
+                    pmd.Atom(
+                        name=f"{elem}{idx + 1}",
+                        type=elem,
+                        atomic_number=atom.GetAtomicNum(),
+                    ),
+                    pmd.Vec3(pos.x, pos.y, pos.z),
+                )
+
+            try:
+                struct = AMBERTemplateGenerator().parameterize(struct, "amber")
+            except Exception as e:
+                logger.warning(f"AMBER parameterization failed: {e}")
+                raise ImportError("AMBER prep failed")
+
+            charged = pmd.amber.AmberParm(
+                struct.topology,
+                struct.positions,
+                struct.box,
+            )
+            charged.save("/tmp/temp.parm7")
+            charged.save("/tmp/temp.rst7")
+
+            try:
+                from meeko import PDBQTWriterLegacy
+
+                struct = pmd.load("/tmp/temp.parm7", "/tmp/temp.rst7")
+                writer = PDBQTWriterLegacy()
+                pdbqt_string = writer.write_string(struct, rigid=True)[0]
+            except Exception as e:
+                logger.warning(f"Meeko conversion failed: {e}")
+                raise ImportError("Meeko conversion failed")
+
+            with open(pdbqt_path, "w") as f:
+                f.write(pdbqt_string)
+
+            return {
+                "success": True,
+                "pdbqt_path": str(pdbqt_path),
+                "pdb_path": str(pdb_path),
+                "method": "ambertools",
+                "atoms": mol.GetNumAtoms(),
+            }
+        except ImportError:
+            pass
+
+        return _fallback_prepare_receptor_pdbqt(request, pdb_path)
+
+    except Exception as e:
+        logger.error(f"Receptor PDBQT prep error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _fallback_prepare_receptor_pdbqt(
+    request: PrepareReceptorPDBQTRequest, pdb_path: Path = None
+):
+    """Fallback: basic H addition with naive PDBQT conversion
+
+    Note: This produces a valid PDBQT but charges are not AMBER-compatible.
+    For proper AMBER charges, ensure openmmforcefields and acpype are installed.
+    """
+    from rdkit import Chem
+    import uuid
+    from pathlib import Path
+
+    mol = Chem.MolFromPDBBlock(request.pdb_content)
+    if mol is None:
+        return {"success": False, "error": "Invalid PDB content"}
+
+    if request.remove_waters:
+        waters = []
+        for atom in mol.GetAtoms():
+            try:
+                elem = atom.GetSymbol()
+                degree = atom.GetTotalDegree()
+                if elem == "O" and degree == 1:
+                    waters.append(atom.GetIdx())
+            except:
+                pass
+        if waters:
+            editor = Chem.RWMol(mol)
+            for idx in sorted(waters, reverse=True):
+                editor.RemoveAtom(idx)
+            mol = editor.GetMol()
+
+    mol = Chem.AddHs(mol, addCoords=True)
+
+    safe_name = "".join(c if c.isalnum() else "_" for c in (request.name or "receptor"))
+    pdbqt_id = str(uuid.uuid4())[:8]
+    pdb_filename = f"{safe_name}_receptor_{pdbqt_id}.pdb"
+    pdbqt_filename = f"{safe_name}_receptor_{pdbqt_id}.pdbqt"
+
+    if pdb_path is None:
+        pdb_path = Path("/app/storage") / pdb_filename
+    else:
+        pdb_path = Path("/app/storage") / pdb_filename
+
+    pdbqt_path = Path("/app/storage") / pdbqt_filename
+    pdbqt_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(pdb_path, "w") as f:
+        f.write(Chem.MolToPDBBlock(mol))
+
+    AD4_ATOM_TYPES = {
+        "H": "HD",
+        "C": "C",
+        "N": "N",
+        "O": "OA",
+        "S": "S",
+        "P": "P",
+        "F": "F",
+        "Cl": "Cl",
+        "Br": "Br",
+        "I": "I",
+        "Fe": "Fe",
+        "Mg": "Mg",
+        "Zn": "ZN",
+        "Ca": "CA",
+        "Na": "NA",
+    }
+
+    with open(pdb_path, "r") as inf, open(pdbqt_path, "w") as outf:
+        for line in inf:
+            if line.startswith(("ATOM", "HETATM")):
+                if len(line) < 66:
+                    line = line.rstrip() + " " * (66 - len(line))
+                elem = line[76:78].strip() if len(line) > 76 else line[12:14].strip()
+                ad4_type = AD4_ATOM_TYPES.get(elem, "C")
+                charge = "0.000"
+                pdbqt_line = (
+                    line[:66] + f"{ad4_type:>4}{charge:>8}" + line[80:]
+                    if len(line) > 80
+                    else line.rstrip() + f"{ad4_type:>4}{charge:>8}" + "\n"
+                )
+                outf.write(pdbqt_line)
+
+    return {
+        "success": True,
+        "pdbqt_path": str(pdbqt_path),
+        "pdb_path": str(pdb_path),
+        "method": "fallback_ad4",
+        "atoms": mol.GetNumAtoms(),
+        "warning": "Using fallback prep with AD4 atom types. For AMBER-compatible charges, ensure openmmforcefields is properly installed.",
+    }
 
 
 class PrepareLigandRequest(BaseModel):

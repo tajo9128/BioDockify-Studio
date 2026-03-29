@@ -1673,6 +1673,13 @@ class DetectInteractionsRequest(BaseModel):
     ligand_pdb_content: str
 
 
+class PrepareReceptorPDBQTRequest(BaseModel):
+    pdb_content: str
+    name: Optional[str] = "receptor"
+    remove_waters: bool = True
+    pH: float = 7.4
+
+
 @app.post("/rdkit/prepare_protein")
 async def prepare_protein(request: PrepareProteinRequest):
     """Prepare protein: remove waters, add hydrogens"""
@@ -1695,6 +1702,21 @@ async def prepare_ligand(request: PrepareLigandRequest):
         try:
             response = await client.post(
                 f"{RDKIT_SERVICE_URL}/prepare_ligand",
+                json=request.model_dump(),
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/rdkit/prepare_receptor_pdbqt")
+async def prepare_receptor_pdbqt(request: PrepareReceptorPDBQTRequest):
+    """Prepare receptor with AMBER charges, return PDBQT"""
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        try:
+            response = await client.post(
+                f"{RDKIT_SERVICE_URL}/prepare_receptor_pdbqt",
                 json=request.model_dump(),
             )
             response.raise_for_status()

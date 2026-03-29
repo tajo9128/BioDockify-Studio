@@ -137,6 +137,118 @@ def run_batch_docking(self, job_id: str, parameters: dict):
 
 @app.task(
     bind=True,
+    name="docking.run_gnina",
+    queue="docking",
+    autoretry_for=(Exception,),
+    max_retries=2,
+    retry_backoff=True,
+    retry_backoff_max=300,
+)
+def run_gnina_docking_task(self, job_id: str, parameters: dict):
+    """Run GNINA docking job with CNN scoring"""
+    logger.info(f"Starting GNINA docking job: {job_id}", extra={"job_id": job_id})
+    try:
+        self.update_state(
+            state="RUNNING",
+            meta={"message": "Running GNINA CNN docking", "job_id": job_id},
+        )
+
+        async_result = httpx.post(
+            f"{DOCKING_SERVICE_URL}/dock/gnina",
+            json={"job_id": job_id, **parameters},
+            timeout=600.0,
+        )
+        async_result.raise_for_status()
+        result = async_result.json()
+
+        logger.info(
+            f"GNINA docking job {job_id} completed: {result}", extra={"job_id": job_id}
+        )
+        return {"job_id": job_id, "status": "completed", "result": result}
+    except Exception as e:
+        logger.error(
+            f"GNINA docking job {job_id} failed: {e}", extra={"job_id": job_id}
+        )
+        raise
+
+
+@app.task(
+    bind=True,
+    name="docking.consensus",
+    queue="celery",
+    autoretry_for=(Exception,),
+    max_retries=2,
+    retry_backoff=True,
+)
+def run_consensus_docking(self, job_id: str, parameters: dict):
+    """Run Vina + GNINA consensus docking"""
+    logger.info(f"Starting consensus docking job: {job_id}", extra={"job_id": job_id})
+    try:
+        self.update_state(
+            state="RUNNING",
+            meta={"message": "Running consensus Vina + GNINA", "job_id": job_id},
+        )
+
+        vina_response = httpx.post(
+            f"{DOCKING_SERVICE_URL}/dock",
+            json={"job_id": job_id, **parameters},
+            timeout=300.0,
+        )
+        vina_response.raise_for_status()
+        vina_result = vina_response.json()
+
+        gnina_response = httpx.post(
+            f"{DOCKING_SERVICE_URL}/dock/gnina",
+            json={"job_id": job_id, **parameters},
+            timeout=600.0,
+        )
+        gnina_response.raise_for_status()
+        gnina_result = gnina_response.json()
+
+        vina_poses = vina_result.get("results", [])
+        gnina_poses = gnina_result.get("results", [])
+
+        consensus_results = []
+        for i, (vp, gp) in enumerate(zip(vina_poses, gnina_poses)):
+            vina_score = vp.get("vina_score", 0)
+            gnina_score = gp.get("gnina_score", 0)
+            consensus_score = (
+                (vina_score + gnina_score) / 2 if gnina_score else vina_score
+            )
+            consensus_results.append(
+                {
+                    "pose_id": i + 1,
+                    "vina_score": vina_score,
+                    "gnina_score": gnina_score,
+                    "consensus_score": consensus_score,
+                }
+            )
+
+        consensus_results.sort(key=lambda x: x["consensus_score"])
+
+        logger.info(
+            f"Consensus docking job {job_id} completed", extra={"job_id": job_id}
+        )
+        return {
+            "job_id": job_id,
+            "status": "completed",
+            "result": {
+                "success": True,
+                "engine": "consensus",
+                "results": consensus_results,
+                "vina_results": vina_result,
+                "gnina_results": gnina_result,
+            },
+        }
+    except Exception as e:
+        logger.error(
+            f"Consensus docking job {job_id} failed: {e}", extra={"job_id": job_id}
+        )
+        raise
+
+
+@app.task(
+    bind=True,
     name="rdkit.process",
     queue="rdkit",
     autoretry_for=(Exception,),

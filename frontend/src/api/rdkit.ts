@@ -9,6 +9,15 @@ export interface PrepareProteinResponse {
   hydrogens_added: boolean
 }
 
+export interface PrepareReceptorPDBQTResponse {
+  success: boolean
+  pdbqt_path: string
+  pdb_path?: string
+  method: string
+  atoms: number
+  warning?: string
+}
+
 export interface PrepareLigandResponse {
   success: boolean
   pdbqt_path?: string
@@ -46,6 +55,19 @@ export async function prepareProtein(
     name,
     remove_waters: removeWaters,
     add_hydrogens: addHydrogens,
+  })
+  return data
+}
+
+export async function prepareReceptorPDBQT(
+  pdbContent: string,
+  name: string = 'receptor',
+  removeWaters: boolean = true
+): Promise<PrepareReceptorPDBQTResponse> {
+  const { data } = await apiClient.post<PrepareReceptorPDBQTResponse>('/rdkit/prepare_receptor_pdbqt', {
+    pdb_content: pdbContent,
+    name,
+    remove_waters: removeWaters,
   })
   return data
 }

@@ -1,6 +1,28 @@
 import { useEffect, useRef, useState } from 'react'
 import { Card, Button } from '@/components/ui'
 
+interface ViewerProps {
+  trajectoryPath?: string
+  topologyPath?: string
+  initialFrame?: number
+  rmsdDataPath?: string
+  bindingSite?: { center: [number, number, number]; radius: number }
+}
+
+interface TrajectoryPlayerState {
+  isPlaying: boolean
+  currentFrame: number
+  totalFrames: number
+  playbackSpeed: number
+  rmsdHistory: number[]
+  time_ps: number
+}
+
+interface BindingSite {
+  center: [number, number, number]
+  radius: number
+}
+
 const VIEW_STYLES = [
   { id: 'stick', label: 'Stick' },
   { id: 'ball', label: 'Ball & Stick' },
@@ -320,6 +342,22 @@ export function Viewer() {
   const [style, setStyle] = useState('cartoon')
   const [colorScheme, setColorScheme] = useState('chain')
   const [loaded, setLoaded] = useState(false)
+  const [trajectoryPath, setTrajectoryPath] = useState<string | null>(null)
+  const [topologyPath, setTopologyPath] = useState<string | null>(null)
+  const [bindingSite, setBindingSite] = useState<BindingSite | null>(null)
+  const [trajState, setTrajState] = useState<TrajectoryPlayerState>({
+    isPlaying: false,
+    currentFrame: 0,
+    totalFrames: 0,
+    playbackSpeed: 15,
+    rmsdHistory: [],
+    time_ps: 0,
+  })
+  const [showTrajectoryControls, setShowTrajectoryControls] = useState(false)
+  const [showSurface, setShowSurface] = useState(false)
+  const [activePanel, setActivePanel] = useState<'style' | 'trajectory' | 'analysis'>('style')
+  const animationRef = useRef<number | null>(null)
+  const lastFrameRef = useRef<number>(0)
 
   // Apply style and color to viewer
   const applyStyle = (newStyle: string, newColor: string) => {
@@ -392,6 +430,58 @@ export function Viewer() {
     }
   }, [])
 
+  // Load trajectory from URL params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const trajPath = params.get('trajectory')
+    const topoPath = params.get('topology')
+    const rmsdPath = params.get('rmsd')
+
+    if (trajPath && containerRef.current && window.$3Dmol) {
+      setTrajectoryPath(trajPath)
+      setTopologyPath(topoPath)
+      setShowTrajectoryControls(true)
+
+      const viewer = viewerRef.current
+      if (!viewer) return
+
+      try {
+        viewer.addTrajectory(trajPath, topoPath || SAMPLE_PROTEIN)
+        const numFrames = viewer.numFrames ? viewer.numFrames() : 100
+        
+        let rmsdHistory: number[] = []
+        if (rmsdPath) {
+          try {
+            fetch(rmsdPath)
+              .then((r) => r.text())
+              .then((text) => {
+                rmsdHistory = text
+                  .split('\n')
+                  .filter((l) => l.trim() && !isNaN(parseFloat(l)))
+                  .map((l) => parseFloat(l))
+                setTrajState((prev) => ({
+                  ...prev,
+                  rmsdHistory: rmsdHistory.slice(0, numFrames),
+                }))
+              })
+              .catch(() => {})
+          } catch {}
+        }
+
+        setTrajState((prev) => ({
+          ...prev,
+          totalFrames: numFrames,
+          rmsdHistory: rmsdHistory.slice(0, numFrames),
+        }))
+        viewer.setFrame(0)
+        viewer.render()
+        lastFrameRef.current = 0
+      } catch (err) {
+        console.error('Failed to load trajectory:', err)
+      }
+    }
+  }, [])
+
   // Update style when selection changes
   useEffect(() => {
     if (viewerRef.current) {
@@ -435,11 +525,80 @@ export function Viewer() {
     link.click()
   }
 
+  const handlePlayPause = () => {
+    if (!viewerRef.current) return
+    const viewer = viewerRef.current
+
+    if (trajState.isPlaying) {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current)
+        animationRef.current = null
+      }
+      setTrajState((prev) => ({ ...prev, isPlaying: false }))
+    } else {
+      const animate = () => {
+        if (!viewerRef.current) return
+        const nextFrame = (trajState.currentFrame + 1) % trajState.totalFrames
+        viewerRef.current.setFrame(nextFrame)
+        viewerRef.current.render()
+        setTrajState((prev) => ({ ...prev, currentFrame: nextFrame }))
+        animationRef.current = requestAnimationFrame(animate)
+      }
+      animationRef.current = requestAnimationFrame(animate)
+      setTrajState((prev) => ({ ...prev, isPlaying: true }))
+    }
+  }
+
+  const handleFrameChange = (frame: number) => {
+    if (!viewerRef.current) return
+    viewerRef.current.setFrame(frame)
+    viewerRef.current.render()
+    lastFrameRef.current = frame
+    const time_ps = Math.round(frame * 10)
+    const rmsd = trajState.rmsdHistory[frame] ?? null
+    setTrajState((prev) => ({
+      ...prev,
+      currentFrame: frame,
+      time_ps,
+      rmsdHistory: prev.rmsdHistory.map((r, i) => (i === frame && rmsd !== null ? rmsd : r)),
+    }))
+  }
+
+  const handleSpeedChange = (speed: number) => {
+    setTrajState((prev) => ({ ...prev, playbackSpeed: speed }))
+  }
+
+  const handleCenterBindingSite = () => {
+    if (!viewerRef.current || !bindingSite) return
+    const viewer = viewerRef.current
+    viewer.centerOn(
+      { x: bindingSite.center[0], y: bindingSite.center[1], z: bindingSite.center[2] },
+      bindingSite.radius
+    )
+    viewer.render()
+  }
+
+  const handleToggleSurface = () => {
+    if (!viewerRef.current) return
+    const viewer = viewerRef.current
+    if (showSurface) {
+      viewer.removeSurface('surface')
+    } else {
+      viewer.addSurface('surface', { opacity: 0.5, color: 'white' })
+    }
+    viewer.render()
+    setShowSurface(!showSurface)
+  }
+
   return (
     <div className="p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-text-primary">3D Molecular Viewer</h1>
-        <p className="text-text-secondary mt-1">Visualize protein-ligand complexes with colorful chains</p>
+        <p className="text-text-secondary mt-1">
+          {showTrajectoryControls
+            ? `Trajectory: Frame ${trajState.currentFrame + 1}/${trajState.totalFrames || 1}${trajState.rmsdHistory[trajState.currentFrame] !== undefined ? ` | RMSD: ${trajState.rmsdHistory[trajState.currentFrame].toFixed(2)} Å` : ''}`
+            : 'Visualize protein-ligand complexes with colorful chains'}
+        </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -452,6 +611,8 @@ export function Viewer() {
                 { icon: '⟳', label: 'Rotate', handler: handleRotate },
                 { icon: '⊕', label: 'Zoom Fit', handler: handleZoomFit },
                 { icon: '↺', label: 'Reset', handler: handleReset },
+                ...(showTrajectoryControls ? [{ icon: '🎬', label: 'Surface', handler: handleToggleSurface }] : []),
+                ...(bindingSite ? [{ icon: '🎯', label: 'Binding Site', handler: handleCenterBindingSite }] : []),
                 { icon: '📷', label: 'Screenshot', handler: handleScreenshot },
               ].map((btn) => (
                 <Button
@@ -465,6 +626,52 @@ export function Viewer() {
               ))}
             </div>
 
+            {showTrajectoryControls && (
+              <div className="flex items-center gap-4 p-3 bg-surface-secondary border-b border-border-light flex-wrap">
+                <Button variant="outline" size="sm" onClick={handlePlayPause}>
+                  {trajState.isPlaying ? '⏸ Pause' : '▶ Play'}
+                </Button>
+
+                <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                  <span className="text-xs text-text-secondary">Frame:</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={trajState.totalFrames > 0 ? trajState.totalFrames - 1 : 0}
+                    value={trajState.currentFrame}
+                    onChange={(e) => handleFrameChange(parseInt(e.target.value))}
+                    className="flex-1"
+                  />
+                  <span className="text-xs text-text-secondary">
+                    {trajState.currentFrame + 1} / {trajState.totalFrames || 1}
+                  </span>
+                </div>
+
+                {trajState.rmsdHistory.length > 0 && (
+                  <div className="flex items-center gap-2 px-3 py-1 bg-primary-50 rounded text-xs">
+                    <span className="text-text-secondary">RMSD:</span>
+                    <span className="font-mono font-bold text-primary">
+                      {trajState.rmsdHistory[trajState.currentFrame]?.toFixed(3) ?? '--'} Å
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-text-secondary">Speed:</span>
+                  <select
+                    value={trajState.playbackSpeed}
+                    onChange={(e) => handleSpeedChange(parseInt(e.target.value))}
+                    className="text-xs border rounded px-1"
+                  >
+                    <option value={5}>5 fps</option>
+                    <option value={10}>10 fps</option>
+                    <option value={15}>15 fps</option>
+                    <option value={30}>30 fps</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
             {/* 3D Viewer */}
             <div
               ref={containerRef}
@@ -474,8 +681,14 @@ export function Viewer() {
 
             {/* Status */}
             <div className="flex items-center justify-between p-3 bg-surface-secondary border-t border-border-light text-xs text-text-secondary">
-              <span>{loaded ? '🧬 Protein structure loaded - 2 chains (A & B)' : 'Loading...'}</span>
-              <span>Use mouse to rotate/zoom</span>
+              <span>
+                {loaded
+                  ? showTrajectoryControls
+                    ? `Trajectory: ${trajState.totalFrames} frames | Time: ${trajState.time_ps} ps | ${trajState.currentFrame + 1}/${trajState.totalFrames || 1}`
+                    : '🧬 Protein structure loaded - 2 chains (A & B)'
+                  : 'Loading...'}
+              </span>
+              <span>Use mouse to rotate/zoom | Scroll to zoom</span>
             </div>
           </Card>
         </div>
@@ -512,12 +725,66 @@ export function Viewer() {
               </Button>
             ))}
           </div>
-          
+
+          {showTrajectoryControls && trajState.rmsdHistory.length > 0 && (
+            <div className="mt-6">
+              <h3 className="font-bold text-text-primary mb-4">RMSD Analysis</h3>
+              <div className="p-3 bg-surface-secondary rounded-lg">
+                <div className="text-xs space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-text-secondary">Current:</span>
+                    <span className="font-mono font-bold">
+                      {trajState.rmsdHistory[trajState.currentFrame]?.toFixed(3) ?? '--'} Å
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-text-secondary">Min:</span>
+                    <span className="font-mono">
+                      {Math.min(...trajState.rmsdHistory).toFixed(3)} Å
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-text-secondary">Max:</span>
+                    <span className="font-mono">
+                      {Math.max(...trajState.rmsdHistory).toFixed(3)} Å
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-text-secondary">Avg:</span>
+                    <span className="font-mono">
+                      {(
+                        trajState.rmsdHistory.reduce((a, b) => a + b, 0) /
+                        trajState.rmsdHistory.length
+                      ).toFixed(3)}{' '}
+                      Å
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-3 h-16 bg-gray-700 rounded overflow-hidden">
+                  <svg viewBox="0 0 100 40" className="w-full h-full" preserveAspectRatio="none">
+                    <polyline
+                      fill="none"
+                      stroke="#4ade80"
+                      strokeWidth="1"
+                      points={trajState.rmsdHistory
+                        .map((v, i) => `${(i / (trajState.rmsdHistory.length - 1)) * 100},${30 - (v / Math.max(...trajState.rmsdHistory)) * 25}`)
+                        .join(' ')}
+                    />
+                    <line x1="0" y1="30" x2="100" y2="30" stroke="#374151" strokeWidth="0.5" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="mt-6 p-3 bg-surface-secondary rounded-lg">
             <p className="text-xs text-text-secondary">
-              <strong>Chain colors:</strong><br/>
-              🔴 Chain A: Red<br/>
-              🔵 Chain B: Teal
+              <strong>Controls:</strong><br />
+              🔴 Chain A: Red<br />
+              🔵 Chain B: Teal<br />
+              Drag: Rotate<br />
+              Scroll: Zoom<br />
+              Right-drag: Pan
             </p>
           </div>
         </Card>

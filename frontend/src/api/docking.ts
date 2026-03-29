@@ -32,6 +32,36 @@ export async function startDocking(
   return data
 }
 
+export async function startConsensusDocking(
+  receptorPath: string,
+  ligandPath: string,
+  config: {
+    center_x: number
+    center_y: number
+    center_z: number
+    size_x: number
+    size_y: number
+    size_z: number
+    exhaustiveness: number
+    num_modes: number
+  }
+): Promise<{ job_id: string; status: string }> {
+  const { data } = await apiClient.post('/dock/async', {
+    receptor_path: receptorPath,
+    ligand_path: ligandPath,
+    center_x: config.center_x,
+    center_y: config.center_y,
+    center_z: config.center_z,
+    size_x: config.size_x,
+    size_y: config.size_y,
+    size_z: config.size_z,
+    exhaustiveness: config.exhaustiveness,
+    num_modes: config.num_modes,
+    engine: 'consensus',
+  })
+  return data
+}
+
 export async function cancelDocking(jobId: string): Promise<{ job_id: string; status: string }> {
   const { data } = await apiClient.post(`/dock/${jobId}/cancel`)
   return data

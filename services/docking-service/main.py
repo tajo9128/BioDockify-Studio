@@ -1,6 +1,7 @@
 """
 Docking Service - AutoDock Vina execution API
 """
+
 import os
 import logging
 from typing import Optional
@@ -92,8 +93,45 @@ def root():
 def check_vina():
     """Check if Vina is available"""
     from docking_engine import check_vina as _check_vina
+
     available = _check_vina()
     return {"vina_available": available}
+
+
+@app.get("/gnina/check")
+def check_gnina():
+    """Check if GNINA is available"""
+    from docking_engine import check_gnina as _check_gnina
+
+    available = _check_gnina()
+    return {"gnina_available": available}
+
+
+@app.post("/dock/gnina")
+def run_gnina_docking(request: DockingRequest):
+    """Run GNINA docking with CNN scoring"""
+    try:
+        from docking_engine import run_gnina_docking as _run_gnina_docking
+
+        result = _run_gnina_docking(
+            receptor_path=request.receptor_path,
+            ligand_path=request.ligand_path,
+            center_x=request.center_x,
+            center_y=request.center_y,
+            center_z=request.center_z,
+            size_x=request.size_x,
+            size_y=request.size_y,
+            size_z=request.size_z,
+            exhaustiveness=request.exhaustiveness,
+            num_modes=request.num_modes,
+            output_dir=STORAGE_DIR,
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"GNINA docking error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/dock")
@@ -114,7 +152,7 @@ def run_docking(request: DockingRequest):
             size_z=request.size_z,
             exhaustiveness=request.exhaustiveness,
             num_modes=request.num_modes,
-            output_dir=STORAGE_DIR
+            output_dir=STORAGE_DIR,
         )
 
         return result
@@ -184,17 +222,28 @@ def process_docking_job(job_id: str, job_data: dict):
             size_z=job_data["size"][2],
             exhaustiveness=job_data["exhaustiveness"],
             num_modes=job_data["num_modes"],
-            output_dir=STORAGE_DIR
+            output_dir=STORAGE_DIR,
         )
 
         if result.get("success"):
-            r.set(f"docking_job:{job_id}", json.dumps({**job_data, "status": "completed", "result": result}))
+            r.set(
+                f"docking_job:{job_id}",
+                json.dumps({**job_data, "status": "completed", "result": result}),
+            )
         else:
-            r.set(f"docking_job:{job_id}", json.dumps({**job_data, "status": "failed", "error": result.get("error")}))
+            r.set(
+                f"docking_job:{job_id}",
+                json.dumps(
+                    {**job_data, "status": "failed", "error": result.get("error")}
+                ),
+            )
 
     except Exception as e:
         logger.error(f"Docking job {job_id} failed: {e}")
-        r.set(f"docking_job:{job_id}", json.dumps({**job_data, "status": "failed", "error": str(e)}))
+        r.set(
+            f"docking_job:{job_id}",
+            json.dumps({**job_data, "status": "failed", "error": str(e)}),
+        )
 
 
 @app.get("/dock/{job_id}/status")
@@ -232,7 +281,9 @@ def get_docking_result(job_id: str):
             if job_data.get("status") == "completed":
                 return job_data.get("result", {})
             elif job_data.get("status") == "failed":
-                raise HTTPException(status_code=400, detail=job_data.get("error", "Job failed"))
+                raise HTTPException(
+                    status_code=400, detail=job_data.get("error", "Job failed")
+                )
             return {"status": job_data.get("status")}
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -244,4 +295,5 @@ def get_docking_result(job_id: str):
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8002)

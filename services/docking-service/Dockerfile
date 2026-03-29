@@ -22,6 +22,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
+RUN wget -q https://github.com/gnina/gnina/releases/download/v1.3.2/gnina.1.3.2 && \
+    mv gnina.1.3.2 /usr/local/bin/gnina && \
+    chmod +x /usr/local/bin/gnina
+
 RUN pip install --no-cache-dir \
     vina \
     rdkit-pypi \

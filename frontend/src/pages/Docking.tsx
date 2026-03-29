@@ -4,7 +4,7 @@ import { Card, Button, Input, ProgressBar, Badge, Tabs, TabPanel } from '@/compo
 import { useDockingStream } from '@/hooks'
 import { startDocking, cancelDocking } from '@/api/docking'
 import { uploadFile, downloadFile } from '@/api/upload'
-import { prepareProtein } from '@/api/rdkit'
+import { prepareProtein, prepareReceptorPDBQT } from '@/api/rdkit'
 import type { DockingConfig } from '@/lib/types'
 
 export function Docking() {
@@ -19,6 +19,8 @@ export function Docking() {
   const [preparingReceptor, setPreparingReceptor] = useState(false)
   const [preparedReceptorPath, setPreparedReceptorPath] = useState<string | null>(null)
   const [receptorPrepInfo, setReceptorPrepInfo] = useState<{watersRemoved: number; hydrogensAdded: number} | null>(null)
+  const [preparingReceptorPDBQT, setPreparingReceptorPDBQT] = useState(false)
+  const [preparedReceptorPDBQTPath, setPreparedReceptorPDBQTPath] = useState<string | null>(null)
   const [config, setConfig] = useState<DockingConfig>({
     center_x: 0,
     center_y: 0,
@@ -82,13 +84,42 @@ export function Docking() {
     }
   }
 
+  const handlePrepareReceptorPDBQT = async () => {
+    if (!receptorFile) return
+    setPreparingReceptorPDBQT(true)
+    setUploadError(null)
+    try {
+      const uploadResult = await uploadFile(receptorFile)
+      const receptorPath = uploadResult.path
+      const fileContent = await downloadFile(receptorPath)
+      const pdbContent = typeof fileContent === 'string' ? fileContent : fileContent.content || fileContent
+      const prepResult = await prepareReceptorPDBQT(
+        pdbContent as string,
+        receptorName.replace(/\.[^.]+$/, ''),
+        true
+      )
+      if (prepResult.success) {
+        setPreparedReceptorPDBQTPath(prepResult.pdbqt_path)
+      } else {
+        throw new Error('Receptor PDBQT preparation failed')
+      }
+    } catch (err) {
+      console.error('Failed to prepare receptor PDBQT:', err)
+      setUploadError(err instanceof Error ? err.message : 'Failed to prepare receptor PDBQT')
+    } finally {
+      setPreparingReceptorPDBQT(false)
+    }
+  }
+
   const handleStartDocking = async () => {
     if (!receptorFile || ligandFiles.length === 0) return
 
     setUploadError(null)
     try {
       let receptorPath: string
-      if (preparedReceptorPath) {
+      if (preparedReceptorPDBQTPath) {
+        receptorPath = preparedReceptorPDBQTPath
+      } else if (preparedReceptorPath) {
         receptorPath = preparedReceptorPath
       } else {
         const uploadResult = await uploadFile(receptorFile)
@@ -181,7 +212,7 @@ export function Docking() {
                 </div>
               )}
 
-              {receptorName && !preparedReceptorPath && (
+              {receptorName && !preparedReceptorPath && !preparedReceptorPDBQTPath && (
                 <Button
                   variant="primary"
                   className="w-full mt-4"
@@ -190,6 +221,28 @@ export function Docking() {
                 >
                   {preparingReceptor ? '⏳ Preparing...' : '🧪 Prepare Receptor'}
                 </Button>
+              )}
+
+              {receptorName && !preparedReceptorPDBQTPath && (
+                <Button
+                  variant="primary"
+                  className="w-full mt-2"
+                  onClick={handlePrepareReceptorPDBQT}
+                  disabled={preparingReceptorPDBQT}
+                >
+                  {preparingReceptorPDBQT ? '⏳ Preparing AMBER...' : '⚡ Prepare Receptor (AMBER)'}
+                </Button>
+              )}
+
+              {preparedReceptorPDBQTPath && (
+                <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Badge variant="success">✓ AMBER Prepared</Badge>
+                  </div>
+                  <p className="text-xs text-green-700">
+                    Receptor ready for Vina/GNINA with AMBER charges
+                  </p>
+                </div>
               )}
 
               {preparedReceptorPath && (
@@ -271,7 +324,7 @@ export function Docking() {
                 {[
                   { id: 'vina', label: 'Vina', desc: 'Physics-based scoring', checked: true },
                   { id: 'gnina', label: 'GNINA', desc: 'Deep learning CNN', checked: false },
-                  { id: 'rfscore', label: 'RF-Score', desc: 'Random Forest ML', checked: false },
+                  { id: 'consensus', label: 'Consensus (Vina + GNINA)', desc: 'Combined scoring', checked: false },
                 ].map((engine) => (
                   <label
                     key={engine.id}

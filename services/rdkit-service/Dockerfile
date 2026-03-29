@@ -33,7 +33,10 @@ RUN pip install --no-cache-dir \
     biopython \
     scipy \
     meeko \
-    gemmi
+    gemmi \
+    openmmforcefields \
+    acpype \
+    parmed
 
 RUN groupadd -r appgroup && useradd -r -g appgroup appuser
 
