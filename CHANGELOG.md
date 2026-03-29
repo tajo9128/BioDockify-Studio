@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.1] - 2026-03-29
+
+### Fixed
+
+- **Critical: 405 errors on docking** — nginx `proxy_pass` trailing slashes stripped the `/dock/` prefix from URIs, causing all docking API calls to return Method Not Allowed. Fixed by removing trailing slashes from all proxy_pass targets
+- **Service port mismatches** — api-backend, brain-service, and other services defaulted to port 8000 internally instead of their docker-compose-mapped ports (8001-8004)
+- **Missing nginx routes** — 15 frontend API routes had no nginx proxy (`/dock/`, `/pharmacophore/`, `/jobs`, `/upload`, `/download`, `/security/`, `/analyze/`, `/binding-site`, `/rmsd/`, `/gpu/`)
+- **Redis key mismatch** — api-backend used `job:*` keys while docking-service used `docking_job:*` keys, making job status queries always return not_found
+- **rdkit-service missing endpoints** — `/smiles-to-3d`, `/optimize`, `/convert`, `/process` endpoints were called by other services but not implemented
+- **pharmacophore-service parameter mismatch** — accepted `smiles`/`pdb` but callers sent `receptor_pdb`/`ligand_pdb`
+- **Docking SSE broken** — `useDockingStream` used EventSource (SSE) but backend returns JSON; replaced with 3s polling
+- **Job ID mismatch** — frontend generated `docking-${Date.now()}` but backend returned its own UUID, breaking progress tracking
+- **Settings page non-functional** — Save/Reset buttons in General and Docker tabs had no onClick handlers
+- **Security: CVE-2026-24486** — upgraded `python-multipart` from 0.0.20 to >=0.0.22
+
+### Infrastructure
+
+- **Microservices architecture** — 9 Docker services: gateway, api-backend, brain-service, docking-service, rdkit-service, pharmacophore-service, redis-worker, postgres, redis
+- **React SPA frontend** — migrated from PyQt6 desktop to Vite+React+TypeScript SPA served by nginx
+- **External LLM support** — replaced Ollama container with configurable external AI providers (OpenAI, DeepSeek, Zhipu AI, Qwen, Moonshot/Kimi, SiliconFlow, Groq, Ollama, LM Studio)
+- **Gateway volume fix** — removed stale `ui-build` named volume that overrode fresh frontend builds
+
+## [1.3.4] - 2026-03-29
+
+### Added
+- **External LLM support** — unified Settings page for configuring 9 different LLM providers with model selection and connection testing
+
+## [1.3.3] - 2026-03-29
+
+### Fixed
+- Dockerfile build output directory mismatch
+
+## [1.2.2] - 2026-03-29
+
+### Fixed
+- Docker and Celery worker configuration issues
+
 ## [1.2.1] - 2026-01-21
 
 ### Fixed
