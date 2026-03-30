@@ -797,34 +797,6 @@ export function Viewer() {
               </div>
             </div>
           )}
-
-          <div className="mt-6">
-            <h3 className="font-bold text-text-primary mb-3">Visualization Guide</h3>
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="text-blue-600">🖱️</span>
-                <span className="text-xs text-blue-800">Drag to rotate</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-blue-600">🔍</span>
-                <span className="text-xs text-blue-800">Scroll to zoom</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-blue-600">✋</span>
-                <span className="text-xs text-blue-800">Right-drag to pan</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 p-3 bg-surface-secondary rounded-lg">
-            <p className="text-xs text-text-secondary">
-              <strong>Chain Colors:</strong><br />
-              🔴 Chain A: Red<br />
-              🔵 Chain B: Teal<br />
-              🔵 Chain C: Blue<br />
-              🟢 Chain D: Green
-            </p>
-          </div>
         </Card>
       </div>
     </div>

@@ -11,30 +11,7 @@ interface Message {
   toolsUsed?: string[]
 }
 
-const SUGGESTED_PROMPTS = [
-  { label: '🎯 Dock aspirin to 1HIA', prompt: 'Dock aspirin (CC(=O)Oc1ccccc1C(=O)O) against receptor 1HIA and show me the binding affinity' },
-  { label: '📊 Analyze drug-likeness', prompt: "Is aspirin drug-like according to Lipinski's Rule of 5? Calculate its properties." },
-  { label: '🧬 Fetch a protein', prompt: 'Fetch protein structure 1ABC from PDB and tell me about it' },
-  { label: '🔬 Design variants', prompt: 'Generate 5 molecular variants of aspirin and suggest which might have better binding' },
-]
 
-const EXAMPLE_WORKFLOWS = [
-  {
-    title: 'Virtual Screening Pipeline',
-    steps: ['Fetch receptor → Generate pharmacophore → Screen library → Dock top hits → Analyze interactions'],
-    icon: '🔍',
-  },
-  {
-    title: 'Lead Optimization',
-    steps: ['Dock lead → Analyze interactions → Suggest modifications → Generate variants → Redock'],
-    icon: '💊',
-  },
-  {
-    title: 'ADMET Prediction',
-    steps: ['Calculate properties → Predict absorption → Assess toxicity → Suggest optimization'],
-    icon: '🧪',
-  },
-]
 
 export function AIAssistant() {
   const [messages, setMessages] = useState<Message[]>([])
@@ -42,7 +19,6 @@ export function AIAssistant() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<{ provider: string; available: boolean } | null>(null)
-  const [showHelp, setShowHelp] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -105,10 +81,6 @@ export function AIAssistant() {
 
   const clearMessages = () => setMessages([])
 
-  const handleSuggestedPrompt = (prompt: string) => {
-    setInput(prompt)
-    inputRef.current?.focus()
-  }
 
   const formatContent = (content: string): string => {
     let formatted = content
@@ -138,9 +110,6 @@ export function AIAssistant() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setShowHelp(!showHelp)}>
-            {showHelp ? 'Hide Help' : 'How to Use'}
-          </Button>
           <Button variant="outline" size="sm" onClick={handleStatus}>
             Status
           </Button>
@@ -150,28 +119,6 @@ export function AIAssistant() {
         </div>
       </div>
 
-      {/* Help Panel */}
-      {showHelp && (
-        <Card padding="md" className="mb-4 bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200">
-          <h3 className="font-bold text-text-primary mb-2">🚀 Quick Start with BioDockify AI</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
-            {EXAMPLE_WORKFLOWS.map((wf) => (
-              <div key={wf.title} className="bg-white/60 rounded-lg p-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xl">{wf.icon}</span>
-                  <span className="font-semibold text-sm">{wf.title}</span>
-                </div>
-                <p className="text-xs text-text-secondary">{wf.steps}</p>
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 pt-3 border-t border-blue-200">
-            <p className="text-xs text-text-secondary">
-              <strong>Try asking:</strong> "Fetch 1HIA from PDB" • "Is this molecule drug-like?" • "Suggest optimizations for better binding" • "Run a virtual screen"
-            </p>
-          </div>
-        </Card>
-      )}
 
       {/* Error banner */}
       {error && (
@@ -208,20 +155,6 @@ export function AIAssistant() {
                 property prediction, lead optimization, and more!
               </p>
               
-              <div className="space-y-2">
-                <p className="text-sm font-semibold text-text-tertiary">Try these examples:</p>
-                <div className="flex flex-wrap gap-2 justify-center">
-                  {SUGGESTED_PROMPTS.map((sp) => (
-                    <button
-                      key={sp.label}
-                      onClick={() => handleSuggestedPrompt(sp.prompt)}
-                      className="px-3 py-1.5 bg-primary-50 hover:bg-primary-100 text-primary-700 rounded-full text-xs font-medium transition-colors"
-                    >
-                      {sp.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
 
               <div className="mt-8 grid grid-cols-2 gap-4 max-w-lg mx-auto text-left">
                 <div className="bg-surface-secondary rounded-lg p-3">

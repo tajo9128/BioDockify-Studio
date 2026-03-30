@@ -34,31 +34,6 @@ export function Dashboard() {
         <p className="text-text-secondary mt-1">Molecular Docking Studio - Virtual screening and binding affinity prediction</p>
       </div>
 
-      {/* Welcome Banner for Students */}
-      <div className="mb-8 bg-gradient-to-r from-primary-50 to-secondary-50 border border-primary-200 rounded-xl p-6">
-        <div className="flex items-start gap-4">
-          <div className="text-4xl">🎓</div>
-          <div className="flex-1">
-            <h2 className="font-bold text-text-primary text-lg mb-2">Welcome to Molecular Docking!</h2>
-            <p className="text-sm text-text-secondary mb-3">
-              Learn how small molecule drugs bind to protein targets. This tool uses AutoDock Vina and GNINA deep learning to predict binding affinities.
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <Link to="/docking">
-                <Button size="sm" className="bg-primary">
-                  🚀 Start Docking
-                </Button>
-              </Link>
-              <Link to="/viewer">
-                <Button size="sm" variant="outline">
-                  👁 Try 3D Viewer
-                </Button>
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <Link to="/docking">
@@ -98,39 +73,6 @@ export function Dashboard() {
         </Link>
       </div>
 
-      {/* Learning Resources */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-        <Card padding="lg" className="bg-blue-50 border-blue-200">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">📚</span>
-            <div>
-              <h3 className="font-semibold text-blue-800 mb-2">What is Molecular Docking?</h3>
-              <p className="text-xs text-blue-700 mb-2">
-                Molecular docking predicts how a small molecule (ligand) binds to a protein (receptor) by exploring billions of possible orientations and scoring them based on binding affinity.
-              </p>
-              <p className="text-xs text-blue-600">
-                <strong>AutoDock Vina</strong> uses physics-based scoring. <strong>GNINA</strong> adds deep learning CNN scores for improved accuracy.
-              </p>
-            </div>
-          </div>
-        </Card>
-
-        <Card padding="lg" className="bg-green-50 border-green-200">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">💡</span>
-            <div>
-              <h3 className="font-semibold text-green-800 mb-2">Getting Started</h3>
-              <ol className="text-xs text-green-700 space-y-1 list-decimal list-inside">
-                <li>Upload a protein receptor (PDB format)</li>
-                <li>Prepare it with AMBER charges for best results</li>
-                <li>Upload your ligand compound (SDF, MOL2, or SMILES)</li>
-                <li>Set the search space around the binding site</li>
-                <li>Run docking and analyze the results!</li>
-              </ol>
-            </div>
-          </div>
-        </Card>
-      </div>
 
       {/* System Status */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
