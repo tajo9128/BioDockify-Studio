@@ -1,29 +1,28 @@
-# BioDockify
+# Biodockify Studio AI
 
-**Professional AI-Powered Molecular Docking Studio** — runs at `http://localhost:8000`
+**AI-Powered Autonomous Drug Discovery Platform** — runs at `http://localhost:8000`
 
-Built with Discovery Studio-inspired UI + BioDockify AI assistant. One-command startup.
+An intelligent molecular docking platform with Discovery Studio-inspired UI, AI-powered molecule optimization, and automated drug discovery workflows.
 
 ## Quick Start
 
 ```bash
-# Option 1: Single Container (Recommended)
+# Single Container (Recommended)
 docker compose -f docker-compose.single.yml up -d
 # Open browser → http://localhost:8000
-
-# Option 2: Full Microservices
-docker compose up -d
 ```
 
 ## Features
 
 | Feature | Description |
 |---------|-------------|
-| **Docking** | AutoDock Vina + GNINA with consensus scoring |
-| **3D Viewer** | Interactive molecular visualization |
-| **MD Simulation** | Molecular dynamics with OpenMM |
-| **Results** | Analysis dashboard with export |
-| **BioDockify AI** | Multi-provider AI assistant (OpenAI, Claude, Gemini, etc.) |
+| **ChemDraw** | Draw & analyze molecules with real-time properties |
+| **Docking** | AutoDock Vina with AI optimization |
+| **AI Optimization** | Molecular modification & bioisosteric replacement |
+| **3D Viewer** | Interactive NGL molecular visualization |
+| **MD Simulation** | Molecular dynamics with OpenMM + GPU acceleration |
+| **Drug-like Analysis** | Lipinski Rule of 5 compliance check |
+| **Biodockify AI** | Multi-provider AI assistant for drug discovery |
 
 ## AI Providers
 
@@ -35,14 +34,25 @@ docker compose up -d
 - OpenRouter
 - Ollama (Local)
 
+## Molecule Library
+
+Pre-loaded with 12 FDA-approved drugs:
+Aspirin, Caffeine, Glucose, Ibuprofen, Morphine, Benzene, Acetaminophen, Lisinopril, Metformin, Warfarin, Tamoxifen, Sildenafil
+
+## Drug-like Properties
+
+- Molecular Weight (MW)
+- LogP (lipophilicity)
+- H-Bond Donors/Acceptors
+- TPSA (topological polar surface area)
+- Rotatable bonds
+- Aromatic rings
+
 ## Development
 
 ```bash
-# Build frontend
-cd frontend && npm install && npm run build
-
 # Build single container
-docker build -f Dockerfile.single -t biodockify/docking-studio:latest .
+docker build -f Dockerfile.single -t tajo9128/biodockify:latest .
 ```
 
 ## License

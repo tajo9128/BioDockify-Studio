@@ -8,7 +8,7 @@ import uuid
 import json
 from datetime import datetime
 
-app = FastAPI(title='BioDockify', version='2.3.1')
+app = FastAPI(title='Biodockify Studio AI', version='2.3.3')
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,7 +27,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BioDockify</title>
+    <title>Biodockify Studio AI</title>
     <link rel="stylesheet" href="https://unpkg.com/smiles-drawer@2.2.1/dist/smiles-drawer.min.css">
     <script src="https://unpkg.com/smiles-drawer@2.2.1/dist/smiles-drawer.min.js"></script>
     <script src="https://unpkg.com/ketcher-core@2.6.2/dist/ketcher-core.min.js"></script>
@@ -119,7 +119,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
 <body>
     <div class="app">
         <header class="header">
-            <h1 style="line-height:1.2;">BioDockify<br><span style="font-size:0.7rem;font-weight:normal;">Docking Studio</span></h1>
+            <h1 style="line-height:1.2;">Biodockify Studio AI<br><span style="font-size:0.65rem;font-weight:normal;color:#00d9ff;">AI-Powered Autonomous Drug Discovery Platform</span></h1>
             <nav class="header-nav">
                 <a href="#" onclick="showPage('dashboard')" class="active">Home</a>
                 <a href="#" onclick="showPage('docking')">Docking</a>
@@ -140,8 +140,8 @@ HTML_CONTENT = '''<!DOCTYPE html>
             <main class="page" id="page-content"></main>
         </div>
         <footer class="status-bar">
-            <span><span class="status-dot green"></span>BioDockify Backend</span>
-            <span>v2.3.1</span>
+            <span><span class="status-dot green"></span>Biodockify Studio AI</span>
+            <span>v2.3.3</span>
         </footer>
     </div>
     <script>
@@ -154,7 +154,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
         
         const pages = {
             dashboard: () => `
-                <h2>Dashboard</h2><p>BioDockify - Molecular Docking Studio</p>
+                <h2>Dashboard</h2><p>AI-Powered Autonomous Drug Discovery Platform</p>
                 <div class="stats-grid">
                     <div class="stat-card"><h3>Total Jobs</h3><div class="value">${stats.total_jobs}</div></div>
                     <div class="stat-card"><h3>Completed</h3><div class="value">${stats.completed_jobs}</div></div>
@@ -166,7 +166,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
                         <div style="display:flex;flex-direction:column;gap:0.5rem;margin-top:1rem">
                             <button class="btn btn-primary" onclick="showPage('docking')">New Docking Job</button>
                             <button class="btn btn-secondary" onclick="showPage('md')">Start MD Simulation</button>
-                            <button class="btn btn-secondary" onclick="showPage('ai')">Ask BioDockify AI</button>
+                            <button class="btn btn-secondary" onclick="showPage('ai')">Ask AI</button>
                         </div>
                     </div>
                     <div class="card"><h3>System Status</h3>
@@ -210,7 +210,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
                     </div>
                 </div>`,
             chemdraw: () => `
-                <h2>🧬 BioDockify ChemDraw</h2><p>Design, analyze, and dock molecules</p>
+                <h2>🧬 Biodockify ChemDraw</h2><p>Design, analyze, and dock molecules</p>
                 <div class="studio-container">
                     <div class="studio-toolbar">
                         <button class="btn btn-secondary" onclick="clearEditor()">🗑️ Clear</button>
@@ -349,7 +349,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
                     <div class="card"><h3>Job Details</h3><p style="color:#a0a0a0">Select a job to view details</p></div>
                 </div>`,
             ai: () => `
-                <h2>BioDockify AI</h2><p>Ask about molecular docking and simulations</p>
+                <h2>Biodockify AI Assistant</h2><p>Ask about molecular docking and simulations</p>
                 <div class="card">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
                         <h3>Chat</h3>
@@ -362,10 +362,10 @@ HTML_CONTENT = '''<!DOCTYPE html>
                     <div class="ai-chat">
                         <div class="chat-messages" id="chat-messages">
                             ${messages.length === 0 ? '<p style="color:#a0a0a0;text-align:center;margin-top:2rem">Ask me anything!</p>' : ''}
-                            ${messages.map(m => '<div class="chat-message ' + m.role + '"><strong>' + (m.role === 'user' ? 'You' : 'BioDockify AI') + ':</strong> ' + m.content + '</div>').join('')}
+                            ${messages.map(m => '<div class="chat-message ' + m.role + '"><strong>' + (m.role === 'user' ? 'You' : 'Biodockify AI') + ':</strong> ' + m.content + '</div>').join('')}
                         </div>
                         <div class="chat-input">
-                            <input type="text" id="chat-input" placeholder="Ask BioDockify AI..." onkeypress="if(event.key==='Enter')sendMessage()">
+                            <input type="text" id="chat-input" placeholder="Ask Biodockify AI..." onkeypress="if(event.key==='Enter')sendMessage()">
                             <button class="btn btn-primary" onclick="sendMessage()">Send</button>
                         </div>
                     </div>
@@ -392,7 +392,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
                         </div>
                     </div>
                 </div>
-                <div class="card"><h3>About</h3><p>BioDockify v2.3.1</p><p style="color:#a0a0a0;margin-top:0.5rem">Single-container molecular docking studio</p></div>`
+                <div class="card"><h3>About</h3><p>Biodockify Studio AI v2.3.3</p><p style="color:#a0a0a0;margin-top:0.5rem">AI-Powered Autonomous Drug Discovery Platform</p></div>`
         };
         
         function showPage(page) {
@@ -833,7 +833,7 @@ async def get_job(job_id: str):
 
 @app.post('/api/ai/chat')
 async def chat(req: dict):
-    return {'response': f'BioDockify AI ({req.get("provider", "demo")}): Configure API keys in Settings for full functionality.', 'provider': req.get('provider', 'demo')}
+    return {'response': f'Biodockify AI ({req.get("provider", "demo")}): I am an AI assistant for drug discovery. Configure API keys in Settings for advanced features.', 'provider': req.get('provider', 'demo')}
 
 @app.post('/api/chem/properties')
 async def get_properties(req: dict):
