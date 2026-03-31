@@ -119,7 +119,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
 <body>
     <div class="app">
         <header class="header">
-            <h1>BioDockify</h1>
+            <h1 style="line-height:1.2;">BioDockify<br><span style="font-size:0.7rem;font-weight:normal;">Docking Studio</span></h1>
             <nav class="header-nav">
                 <a href="#" onclick="showPage('dashboard')" class="active">Home</a>
                 <a href="#" onclick="showPage('docking')">Docking</a>
