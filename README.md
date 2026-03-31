@@ -32,7 +32,8 @@ An intelligent molecular docking platform with Discovery Studio-inspired UI, AI-
 
 ### 🧪 Docking
 - AutoDock Vina integration
-- SMILES to PDB preparation
+- GNINA deep learning docking (CNN scoring)
+- SMILES to PDB/PDBQT preparation
 - Real-time job tracking
 
 ### 📊 Molecular Dynamics
@@ -53,13 +54,13 @@ An intelligent molecular docking platform with Discovery Studio-inspired UI, AI-
 ## Quick Start
 
 ```bash
-# Pull and run (once built)
+# Pull and run
 docker pull tajo9128/biodockify:latest
 docker run -p 8000:8000 tajo9128/biodockify:latest
 
 # Or build locally
-git clone https://github.com/tajo9128/Docking-studio.git
-cd Docking-studio
+git clone https://github.com/tajo9128/BioDockify-Studio-AI.git
+cd BioDockify-Studio-AI
 docker build -f Dockerfile.single -t biodockify .
 docker run -p 8000:8000 biodockify
 ```
@@ -111,24 +112,51 @@ Pre-loaded with 12 FDA-approved drugs:
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                  Biodockify Studio AI                 │
-├─────────────────────────────────────────────────────┤
-│  Frontend (SPA)                                     │
-│  ├── ChemDraw Panel                                 │
-│  ├── 3D Viewer (NGL)                              │
-│  ├── Properties & AI Suggestions                    │
-│  └── Job Management                                 │
-├─────────────────────────────────────────────────────┤
-│  Backend (FastAPI)                                  │
-│  ├── /api/chem/properties    (RDKit)               │
-│  ├── /api/chem/suggestions  (AI Analysis)        │
-│  ├── /api/chem/dock         (Docking)            │
-│  ├── /api/chem/3d/{id}      (3D Structure)      │
-│  └── /api/ai/*              (AI Chat)             │
-├─────────────────────────────────────────────────────┤
-│  Container (Python 3.11 + RDKit + OpenMM)         │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Biodockify Studio AI v2.3.3                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Frontend (SPA - embedded HTML/JS)                                       │
+│  ├── ChemDraw Panel (smiles-drawer + Ketcher)                          │
+│  ├── 3D Viewer (NGL Viewer)                                            │
+│  ├── Properties Panel (Lipinski Rule of 5)                             │
+│  ├── AI Suggestions Panel (RDKit drug-likeness)                       │
+│  ├── Molecular Optimization (mutation strategies)                       │
+│  ├── Docking Panel (Vina config, receptor/ligand upload)               │
+│  ├── MD Panel (OpenMM params, GPU info, trajectory view)               │
+│  ├── Results Panel (scores, trajectories, analysis)                    │
+│  └── Job Management (auto-refresh, queue, history)                     │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Backend (FastAPI)                                                      │
+│  ├── GET  /api/stats                       (job statistics)            │
+│  ├── GET  /api/health                     (health check)               │
+│  ├── GET  /api/md/gpu-info                (CUDA/CPU/OpenCL detect)    │
+│  ├── GET  /api/ai/providers               (LLM providers list)         │
+│  ├── POST /api/ai/test                     (test API key)             │
+│  ├── POST /api/ai/chat                     (AI chat)                  │
+│  ├── POST /api/docking/jobs               (create docking job)        │
+│  ├── GET  /api/docking/jobs               (list all jobs)            │
+│  ├── GET  /api/docking/jobs/{id}          (get job details)           │
+│  ├── POST /api/docking/run                 (run AutoDock Vina)         │
+│  ├── GET  /api/docking/results/{id}        (docking scores/poses)     │
+│  ├── POST /api/chem/properties             (RDKit molecular calc)      │
+│  ├── POST /api/chem/suggestions            (drug-likeness analysis)    │
+│  ├── POST /api/chem/dock                   (prepare + create job)     │
+│  ├── GET  /api/chem/3d/{id}               (PDB structure for viewer)   │
+│  ├── POST /api/md/simulate                (run OpenMM MD)             │
+│  ├── GET  /api/md/results/{id}            (MD trajectory data)       │
+│  └── POST /api/chem/optimize              (AI molecular optimization)  │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Container (python:3.11-slim)                                           │
+│  ├── rdkit-pypi==2022.9.5 (properties, prep, analysis)                │
+│  ├── autodock-vina            (molecular docking engine)              │
+│  ├── gnina                    (CNN deep learning docking)             │
+│  ├── openmm                   (MD simulations, GPU-accelerated)       │
+│  ├── fastapi + uvicorn         (web framework)                        │
+│  ├── biopython                (protein structure handling)            │
+│  ├── meeko                    (ligand preparation for Vina)           │
+│  ├── Storage: /app/data/jobs/{id}/{pdb,pdbqt,xtc,dcd}               │
+│  └── Port: 8000                                                      │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Docker Images
@@ -137,16 +165,17 @@ Pre-loaded with 12 FDA-approved drugs:
 |-------|-------------|
 | `tajo9128/biodockify:latest` | Latest release |
 | `tajo9128/biodockify:v2.3.3` | Versioned release |
+| `tajo9128/docking-studio:latest` | Legacy tag |
+| `tajo9128/docking-studio:full-latest` | Full microservices |
 
 ## Development
 
 ```bash
-# Local development
-cd backend
+# Local development (single container)
 pip install -r requirements.txt
 python app.py
 
-# Frontend (if separate)
+# Frontend (if using separate frontend)
 cd frontend
 npm install
 npm run dev
