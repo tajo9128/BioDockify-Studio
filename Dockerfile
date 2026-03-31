@@ -13,7 +13,7 @@ RUN npm run build
 FROM python:3.11-slim
 
 LABEL maintainer="BioDockify"
-LABEL description="Docking Studio - Vina molecular docking with RDKit analysis"
+LABEL description="BioDockify Studio AI - All-in-one molecular docking and drug discovery platform"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1 \
@@ -47,13 +47,13 @@ RUN pip install --no-cache-dir \
 # Set working directory
 WORKDIR /app
 
-# Copy backend files
-COPY backend/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+# Copy backend files (preserve directory structure)
+COPY backend/requirements.txt /app/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 
-COPY backend/ /app/
+COPY backend/ /app/backend/
 
-# Copy React built frontend into static directory
+# Copy React built frontend into backend static directory
 COPY --from=frontend-builder /app/frontend/dist /app/backend/static/
 
 # Create supervisor configuration
@@ -63,14 +63,15 @@ RUN mkdir -p /var/log/supervisor
 RUN echo '#!/bin/bash' > /startup.sh && \
     echo 'echo ""' >> /startup.sh && \
     echo 'echo "============================================================"' >> /startup.sh && \
-    echo 'echo "  🧬 Docking Studio - Backend Starting..."' >> /startup.sh && \
-    echo 'echo "============================================================"' >> /startup.sh && \
+    echo 'echo "  🧬 BioDockify Studio AI - Backend Starting..."' >> /startup.sh && \
+    echo 'echo "============================================================="' >> /startup.sh && \
     echo 'echo ""' >> /startup.sh && \
     echo 'echo "  🌐 Web UI:           http://localhost:8000"' >> /startup.sh && \
+    echo 'echo "  🧪 ChemDraw:         http://localhost:8000/chemdraw"' >> /startup.sh && \
     echo 'echo "  📚 API Documentation: http://localhost:8000/docs"' >> /startup.sh && \
     echo 'echo "  📖 ReDoc:            http://localhost:8000/redoc"' >> /startup.sh && \
     echo 'echo "  ✅ Health:           http://localhost:8000/health"' >> /startup.sh && \
-    echo 'echo "============================================================"' >> /startup.sh && \
+    echo 'echo "============================================================="' >> /startup.sh && \
     echo 'echo ""' >> /startup.sh && \
     chmod +x /startup.sh
 
@@ -84,7 +85,7 @@ RUN echo '[supervisord]' >> /etc/supervisor/conf.d/docking-studio.conf && \
     echo '' >> /etc/supervisor/conf.d/docking-studio.conf && \
     echo '[program:uvicorn]' >> /etc/supervisor/conf.d/docking-studio.conf && \
     echo 'command=uvicorn main:app --host 0.0.0.0 --port 8000 --reload' >> /etc/supervisor/conf.d/docking-studio.conf && \
-    echo 'directory=/app' >> /etc/supervisor/conf.d/docking-studio.conf && \
+    echo 'directory=/app/backend' >> /etc/supervisor/conf.d/docking-studio.conf && \
     echo 'user=root' >> /etc/supervisor/conf.d/docking-studio.conf && \
     echo 'stdout_logfile=/dev/stdout' >> /etc/supervisor/conf.d/docking-studio.conf && \
     echo 'stdout_logfile_maxbytes=0' >> /etc/supervisor/conf.d/docking-studio.conf && \

@@ -1,22 +1,52 @@
-# Biodockify Studio AI - Single container with RDKit
+# BioDockify Studio AI - Single Container
+# All-in-one: React frontend + FastAPI backend + RDKit
+
+# Stage 1: Build React frontend
+FROM node:20-alpine AS frontend-builder
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+# Stage 2: Python backend with RDKit
 FROM python:3.11-slim
+
+LABEL maintainer="BioDockify"
+LABEL description="BioDockify Studio AI - Single container with RDKit"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget curl bzip2 ca-certificates tzdata && rm -rf /var/lib/apt/lists/*
+    wget curl bzip2 ca-certificates tzdata libopenbabel7 libhdf5-dev \
+    libopenblas-dev libglib2.0-0 libgfortran5 libsm6 libxml2 \
+    libxslt1.1 libxrender1 libxext6 && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir \
     rdkit-pypi==2022.9.5 \
-    fastapi==0.109.2 uvicorn[standard]==0.27.1 \
-    python-multipart==0.0.9 pydantic==2.6.1 \
-    pydantic-settings==2.1.0 httpx==0.26.0
+    fastapi==0.109.2 \
+    uvicorn[standard]==0.27.1 \
+    python-multipart==0.0.9 \
+    pydantic==2.6.1 \
+    httpx==0.26.0 \
+    sqlalchemy \
+    biopython \
+    numpy \
+    requests
 
-COPY app.py /app/
-RUN mkdir -p /app/data/jobs /app/data/ligands
+COPY backend/requirements.txt /app/backend/requirements.txt
+COPY backend/ /app/backend/
+
+COPY --from=frontend-builder /app/frontend/dist /app/backend/static/
+
+RUN mkdir -p /app/backend/storage && \
+    mkdir -p /app/backend/static/assets
 
 EXPOSE 8000
-CMD ["python", "/app/app.py"]
+
+WORKDIR /app/backend
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

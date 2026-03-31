@@ -1,7 +1,7 @@
 # Biodockify Studio AI
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-2.3.3-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Version-2.3.4-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/Python-3.11-green.svg" alt="Python">
   <img src="https://img.shields.io/badge/License-MIT-purple.svg" alt="License">
 </p>
@@ -60,14 +60,14 @@ An intelligent molecular docking platform with Discovery Studio-inspired UI, AI-
 
 ```bash
 # Pull and run
-docker pull tajo9128/biodockify:latest
-docker run -p 8000:8000 tajo9128/biodockify:latest
+docker pull tajo9128/biodockify-studio-ai:latest
+docker run -p 8000:8000 tajo9128/biodockify-studio-ai:latest
 
 # Or build locally
 git clone https://github.com/tajo9128/BioDockify-Studio-AI.git
 cd BioDockify-Studio-AI
-docker build -f Dockerfile.single -t biodockify .
-docker run -p 8000:8000 biodockify
+docker build -f Dockerfile.single -t biodockify-studio-ai .
+docker run -p 8000:8000 biodockify-studio-ai
 ```
 
 Then open **http://localhost:8000** in your browser.
@@ -118,7 +118,7 @@ Pre-loaded with 12 FDA-approved drugs:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    Biodockify Studio AI v2.3.3                           │
+│                    BioDockify Studio AI v2.3.4                           │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  Frontend (SPA - embedded HTML/JS)                                       │
 │  ├── ChemDraw Panel (smiles-drawer + Ketcher)                          │
@@ -170,10 +170,9 @@ Pre-loaded with 12 FDA-approved drugs:
 
 | Image | Description |
 |-------|-------------|
-| `tajo9128/biodockify:latest` | Latest release |
-| `tajo9128/biodockify:v2.3.3` | Versioned release |
-| `tajo9128/docking-studio:latest` | Legacy tag |
-| `tajo9128/docking-studio:full-latest` | Full microservices |
+| `tajo9128/biodockify-studio-ai:latest` | Latest release |
+| `tajo9128/biodockify-studio-ai:v2.3.4` | Versioned release |
+| `tajo9128/biodockify-studio-ai:full-latest` | Full stack (Vina/GNINA/RF) |
 
 ## Development
 

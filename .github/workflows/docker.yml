@@ -47,8 +47,8 @@ jobs:
           file: ./Dockerfile.single
           push: true
           tags: |
-            tajo9128/docking-studio:latest
-            tajo9128/docking-studio:${{ steps.version.outputs.VERSION }}
+            tajo9128/biodockify-studio-ai:latest
+            tajo9128/biodockify-studio-ai:${{ steps.version.outputs.VERSION }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       
@@ -59,13 +59,13 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            tajo9128/docking-studio:full-latest
-            tajo9128/docking-studio:full-${{ steps.version.outputs.VERSION }}
+            tajo9128/biodockify-studio-ai:full-latest
+            tajo9128/biodockify-studio-ai:full-${{ steps.version.outputs.VERSION }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       
       - name: Show pushed tags
         run: |
           echo "Docker image pushed:"
-          echo "  tajo9128/docking-studio:${{ steps.version.outputs.VERSION }}"
-          echo "  tajo9128/docking-studio:full-${{ steps.version.outputs.VERSION }}"
+          echo "  tajo9128/biodockify-studio-ai:${{ steps.version.outputs.VERSION }}"
+          echo "  tajo9128/biodockify-studio-ai:full-${{ steps.version.outputs.VERSION }}"
