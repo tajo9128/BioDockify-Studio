@@ -14,6 +14,7 @@ import { Settings } from '@/pages/Settings'
 import { Pharmacophore } from '@/pages/Pharmacophore'
 import { QSARModeling } from '@/pages/QSARModeling'
 import { MoleculeDynamics } from '@/pages/MoleculeDynamics'
+import { ADMET } from '@/pages/ADMET'
 
 export default function App() {
   return (
@@ -29,6 +30,7 @@ export default function App() {
           <Route path="/interactions" element={<Interactions />} />
           <Route path="/pharmacophore" element={<Pharmacophore />} />
           <Route path="/qsar" element={<QSARModeling />} />
+          <Route path="/admet" element={<ADMET />} />
           <Route path="/md" element={<MoleculeDynamics />} />
           <Route path="/viewer" element={<Viewer />} />
           <Route path="/ai" element={<AIAssistant />} />

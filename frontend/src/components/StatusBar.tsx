@@ -29,7 +29,7 @@ export function StatusBar() {
       </div>
       <div className="flex items-center gap-4">
         <span>Jobs: {jobs}</span>
-        <span>v2.3.5</span>
+        <span>v2.4.0</span>
       </div>
     </footer>
   )

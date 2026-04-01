@@ -7,7 +7,10 @@ numpy
 rdkit-pypi
 python-multipart>=0.0.22
 requests
+psutil
+crewai>=0.121.0
+crewai-tools>=0.1.0
+pyyaml
 
-# Security fixes for vulnerabilities
 wheel>=0.46.2
 jaraco.context>=6.1.0

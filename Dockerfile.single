@@ -1,5 +1,5 @@
-# BioDockify Studio AI - Single Container
-# All-in-one: React frontend + FastAPI backend + RDKit
+# BioDockify Studio AI - Single Container v2.4.0
+# All-in-one: React frontend + FastAPI backend + RDKit + CrewAI
 
 # Stage 1: Build React frontend
 FROM node:20-alpine AS frontend-builder
@@ -13,7 +13,8 @@ RUN npm run build
 FROM python:3.11-slim
 
 LABEL maintainer="BioDockify"
-LABEL description="BioDockify Studio AI - Single container with RDKit"
+LABEL description="BioDockify Studio AI v2.4.0 - Single container with RDKit + CrewAI"
+LABEL version="2.4.0"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -26,7 +27,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 libsm6 libxml2 libxslt1.1 libxrender1 libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python packages from pip
 RUN pip install --no-cache-dir \
     rdkit-pypi==2022.9.5 \
     fastapi==0.109.2 \
@@ -37,9 +37,12 @@ RUN pip install --no-cache-dir \
     sqlalchemy \
     biopython \
     numpy \
-    requests
+    requests \
+    pyyaml
 
 COPY backend/requirements.txt /app/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt || true
+
 COPY backend/ /app/backend/
 
 COPY --from=frontend-builder /app/frontend/dist /app/backend/static/

@@ -1,16 +1,24 @@
 import { useState, useEffect } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
 
-const APP_VERSION = '2.3.5'
+const APP_VERSION = '2.4.0'
 
-// Nanobot Skills
-const DEFAULT_SKILLS = [
-  { id: 'docking', name: 'Molecular Docking', icon: '🧬', enabled: true, description: 'Run AutoDock Vina, GNINA, RF-Score docking' },
-  { id: 'rdkit', name: 'RDKit Chemistry', icon: '⚗️', enabled: true, description: 'SMILES conversion, property calculation, molecule optimization' },
-  { id: 'pharmacophore', name: 'Pharmacophore', icon: '💊', enabled: true, description: 'Generate and screen pharmacophores' },
-  { id: 'analysis', name: 'Interaction Analysis', icon: '🔬', enabled: true, description: 'H-bond, hydrophobic, π-stacking analysis' },
-  { id: 'qsar', name: 'QSAR Modeling', icon: '📊', enabled: false, description: 'Build QSAR models and predict activity' },
-  { id: 'md', name: 'Molecular Dynamics', icon: '🎬', enabled: false, description: 'Run MD simulations with OpenMM' },
+const CREWAI_AGENTS = [
+  { id: 'docking', name: 'Molecular Docking Specialist', icon: '🧬', role: 'Runs Vina/GNINA/RF docking' },
+  { id: 'chemistry', name: 'Computational Chemistry Expert', icon: '⚗️', role: 'SMILES, properties, optimization' },
+  { id: 'pharmacophore', name: 'Pharmacophore Modeling Expert', icon: '💊', role: 'Generate and screen pharmacophores' },
+  { id: 'admet', name: 'ADMET Prediction Specialist', icon: '🛡️', role: 'Absorption, distribution, metabolism, excretion, toxicity' },
+  { id: 'analysis', name: 'Drug Discovery Analysis Expert', icon: '🔬', role: 'Interactions, scoring, ranking' },
+  { id: 'qsar', name: 'QSAR Modeling Specialist', icon: '📊', role: 'Build predictive QSAR models' },
+  { id: 'orchestrator', name: 'Drug Discovery Orchestrator', icon: '🧠', role: 'Coordinates the team and synthesizes results' },
+]
+
+const CREWAI_CREWS = [
+  { id: 'virtual_screening', name: 'Virtual Screening', description: 'Screen compound libraries against a target protein' },
+  { id: 'lead_optimization', name: 'Lead Optimization', description: 'Iteratively improve a lead compound' },
+  { id: 'admet_prediction', name: 'ADMET Prediction', description: 'Full ADMET profiling for compound libraries' },
+  { id: 'docking_analysis', name: 'Docking Analysis', description: 'Dock, analyze, and report' },
+  { id: 'drug_discovery', name: 'Master Drug Discovery', description: 'Full pipeline from target to lead' },
 ]
 
 // Nanobot Plugins (channels/providers)
@@ -113,7 +121,7 @@ export function Settings() {
   const { theme, setTheme } = useTheme()
   const isDark = theme === 'dark'
   
-  const [activeTab, setActiveTab] = useState<'llm' | 'nanobot' | 'skills' | 'plugins' | 'system' | 'about'>('llm')
+  const [activeTab, setActiveTab] = useState<'llm' | 'crewai' | 'notifications' | 'plugins' | 'system' | 'about'>('llm')
   const [showApiKey, setShowApiKey] = useState(false)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -121,12 +129,15 @@ export function Settings() {
   const [testResult, setTestResult] = useState<{ status: string; response?: string; error?: string } | null>(null)
   const [message, setMessage] = useState('')
   const [availableOllamaModels, setAvailableOllamaModels] = useState<string[]>([])
-  
-  // Skills state
-  const [skills, setSkills] = useState(DEFAULT_SKILLS)
-  
-  // Plugins state
-  const [plugins, setPlugins] = useState(PLUGIN_CHANNELS)
+
+  const [emailConfig, setEmailConfig] = useState({
+    enabled: false,
+    smtpHost: '',
+    smtpPort: '587',
+    from: '',
+    password: '',
+    to: '',
+  })
 
   const [llmConfig, setLlmConfig] = useState({
     provider: 'ollama',
@@ -301,8 +312,8 @@ export function Settings() {
         <div className="flex gap-1 mb-6 p-1 rounded-lg w-fit ${isDark ? 'bg-gray-800' : 'bg-gray-200'} overflow-x-auto">
           {([
             { key: 'llm', label: 'AI Provider', icon: '🤖' },
-            { key: 'nanobot', label: 'BioDockify AI', icon: '🧬' },
-            { key: 'skills', label: 'Nanobot Skills', icon: '🔧' },
+            { key: 'crewai', label: 'CrewAI Agents', icon: '🧬' },
+            { key: 'notifications', label: 'Email', icon: '📧' },
             { key: 'plugins', label: 'Plugins', icon: '🔌' },
             { key: 'system', label: 'System', icon: '⚙️' },
             { key: 'about', label: 'About', icon: 'ℹ️' },
@@ -610,196 +621,238 @@ export function Settings() {
           </div>
         )}
 
-        {/* === BIODOCKIFY AI TAB === */}
-        {activeTab === 'nanobot' && (
+        {/* === CREWAI AGENTS TAB === */}
+        {activeTab === 'crewai' && (
           <div className="space-y-6">
             <div className={`rounded-xl border ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} shadow-sm`}>
               <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                <h2 className="text-lg font-semibold">🧬 BioDockify AI Configuration</h2>
+                <h2 className="text-lg font-semibold">CrewAI Multi-Agent System</h2>
                 <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                  Configure your AI assistant's behavior and capabilities
+                  7 specialized AI agents working together as one brain for drug discovery
                 </p>
               </div>
-              <div className="p-6 space-y-5">
-                <div>
-                  <label className={labelClass}>AI Mode</label>
-                  <select className={inputClass()}>
-                    <option value="auto">Auto (detect available)</option>
-                    <option value="ollama">Ollama (Local)</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="offline">Offline Mode</option>
-                  </select>
-                  <p className={hintClass}>Choose how BioDockify AI selects the language model</p>
-                </div>
-                
-                <div>
-                  <label className={labelClass}>Temperature</label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="2"
-                    step="0.1"
-                    defaultValue="0.7"
-                    className="w-full"
-                  />
-                  <div className="flex justify-between text-xs text-gray-500">
-                    <span>Precise</span>
-                    <span>Creative</span>
+              <div className="p-6 space-y-3">
+                {CREWAI_AGENTS.map(agent => (
+                  <div
+                    key={agent.id}
+                    className={`p-4 rounded-lg border ${
+                      isDark ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">{agent.icon}</span>
+                      <div>
+                        <p className="font-medium">{agent.name}</p>
+                        <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                          {agent.role}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                
-                <div>
-                  <label className={labelClass}>Max Context Tokens</label>
-                  <input
-                    type="number"
-                    defaultValue="4096"
-                    className={inputClass()}
-                  />
-                </div>
-                
-                <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-gray-50'}`}>
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      defaultChecked
-                      className="w-5 h-5 text-blue-600 rounded"
-                    />
-                    <div>
-                      <p className="font-medium">Enable Streaming Responses</p>
-                      <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                        Show AI responses as they're generated
-                      </p>
-                    </div>
-                  </label>
-                </div>
-                
-                <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-gray-50'}`}>
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      defaultChecked
-                      className="w-5 h-5 text-blue-600 rounded"
-                    />
-                    <div>
-                      <p className="font-medium">Show Tool Usage</p>
-                      <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                        Display which tools BioDockify AI is using
-                      </p>
-                    </div>
-                  </label>
-                </div>
-                
-                <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-gray-50'}`}>
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      defaultChecked
-                      className="w-5 h-5 text-blue-600 rounded"
-                    />
-                    <div>
-                      <p className="font-medium">Chain-of-Thought Reasoning</p>
-                      <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                        Show BioDockify AI's reasoning process step by step
-                      </p>
-                    </div>
-                  </label>
-                </div>
+                ))}
               </div>
             </div>
-            
+
             <div className={`rounded-xl border ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} shadow-sm`}>
               <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                <h2 className="text-lg font-semibold">Personality & Behavior</h2>
+                <h2 className="text-lg font-semibold">Pre-built Crews</h2>
+                <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                  Workflows that combine agents for specific drug discovery tasks
+                </p>
+              </div>
+              <div className="p-6 space-y-3">
+                {CREWAI_CREWS.map(crew => (
+                  <div
+                    key={crew.id}
+                    className={`p-4 rounded-lg border ${
+                      isDark ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'
+                    }`}
+                  >
+                    <p className="font-medium">{crew.name}</p>
+                    <p className={`text-xs mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                      {crew.description}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className={`rounded-xl border ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} shadow-sm`}>
+              <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                <h2 className="text-lg font-semibold">Configuration</h2>
               </div>
               <div className="p-6 space-y-4">
                 <div>
-                  <label className={labelClass}>Response Style</label>
-                  <select className={inputClass()}>
-                    <option value="scientific">Scientific (Detailed, technical)</option>
-                    <option value="balanced">Balanced (Mix of detail and simplicity)</option>
-                    <option value="educational">Educational (Beginner-friendly)</option>
-                  </select>
+                  <label className={labelClass}>CrewAI LLM Provider</label>
+                  <p className={`text-xs mb-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    CrewAI uses the same LLM settings from the AI Provider tab. Set OPENAI_API_KEY or OLLAMA_BASE_URL env vars for direct CrewAI use.
+                  </p>
                 </div>
-                
-                <div>
-                  <label className={labelClass}>Scientific Knowledge Level</label>
-                  <select className={inputClass()}>
-                    <option value="expert">Expert (Assumes deep domain knowledge)</option>
-                    <option value="intermediate">Intermediate (Standard scientific)</option>
-                    <option value="beginner">Beginner (Explain all concepts)</option>
-                  </select>
+                <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-gray-50'}`}>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" defaultChecked className="w-5 h-5 text-blue-600 rounded" />
+                    <div>
+                      <p className="font-medium">Enable Memory</p>
+                      <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                        Allow agents to remember context between tasks
+                      </p>
+                    </div>
+                  </label>
+                </div>
+                <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-gray-50'}`}>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" defaultChecked className="w-5 h-5 text-blue-600 rounded" />
+                    <div>
+                      <p className="font-medium">Enable Reasoning</p>
+                      <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                        Agents use chain-of-thought reasoning for complex tasks
+                      </p>
+                    </div>
+                  </label>
+                </div>
+                <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-gray-50'}`}>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" defaultChecked className="w-5 h-5 text-blue-600 rounded" />
+                    <div>
+                      <p className="font-medium">Allow Delegation</p>
+                      <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                        Agents can delegate tasks to other agents
+                      </p>
+                    </div>
+                  </label>
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* === NANOBOT SKILLS TAB === */}
-        {activeTab === 'skills' && (
+        {/* === EMAIL NOTIFICATIONS TAB === */}
+        {activeTab === 'notifications' && (
           <div className="space-y-6">
             <div className={`rounded-xl border ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} shadow-sm`}>
               <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                <h2 className="text-lg font-semibold">🔧 Nanobot Skills</h2>
+                <h2 className="text-lg font-semibold">Email Notifications</h2>
                 <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                  Enable or disable AI capabilities. Only enabled skills will be available to BioDockify AI.
+                  Configure email notifications for job completion and alerts
                 </p>
               </div>
-              <div className="p-6 space-y-3">
-                {skills.map(skill => (
-                  <div
-                    key={skill.id}
-                    className={`p-4 rounded-lg border ${
-                      isDark ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'
+              <div className="p-6 space-y-5">
+                <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-gray-50'}`}>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={emailConfig.enabled}
+                      onChange={(e) => setEmailConfig({ ...emailConfig, enabled: e.target.checked })}
+                      className="w-5 h-5 text-blue-600 rounded"
+                    />
+                    <div>
+                      <p className="font-medium">Enable Email Notifications</p>
+                      <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                        Receive email alerts when jobs complete or fail
+                      </p>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelClass}>SMTP Host</label>
+                    <input
+                      type="text"
+                      value={emailConfig.smtpHost}
+                      onChange={(e) => setEmailConfig({ ...emailConfig, smtpHost: e.target.value })}
+                      className={inputClass()}
+                      placeholder="smtp.gmail.com"
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>SMTP Port</label>
+                    <input
+                      type="number"
+                      value={emailConfig.smtpPort}
+                      onChange={(e) => setEmailConfig({ ...emailConfig, smtpPort: e.target.value })}
+                      className={inputClass()}
+                      placeholder="587"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className={labelClass}>From Email</label>
+                  <input
+                    type="email"
+                    value={emailConfig.from}
+                    onChange={(e) => setEmailConfig({ ...emailConfig, from: e.target.value })}
+                    className={inputClass()}
+                    placeholder="biodockify@example.com"
+                  />
+                </div>
+
+                <div>
+                  <label className={labelClass}>SMTP Password</label>
+                  <input
+                    type="password"
+                    value={emailConfig.password}
+                    onChange={(e) => setEmailConfig({ ...emailConfig, password: e.target.value })}
+                    className={inputClass()}
+                    placeholder="App-specific password"
+                  />
+                  <p className={hintClass}>Use an app-specific password for Gmail</p>
+                </div>
+
+                <div>
+                  <label className={labelClass}>To Email</label>
+                  <input
+                    type="email"
+                    value={emailConfig.to}
+                    onChange={(e) => setEmailConfig({ ...emailConfig, to: e.target.value })}
+                    className={inputClass()}
+                    placeholder="your-email@example.com"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={async () => {
+                      try {
+                        await fetch('/notifications/configure', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            email_enabled: emailConfig.enabled,
+                            email_smtp_host: emailConfig.smtpHost,
+                            email_smtp_port: parseInt(emailConfig.smtpPort) || 587,
+                            email_from: emailConfig.from,
+                            email_password: emailConfig.password,
+                            email_to: emailConfig.to,
+                          }),
+                        })
+                        setMessage('Email settings saved')
+                      } catch {
+                        setMessage('Failed to save email settings')
+                      }
+                    }}
+                    className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+                  >
+                    Save Email Settings
+                  </button>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await fetch('/notifications/test?channel=email', { method: 'POST' })
+                        const data = await res.json()
+                        setMessage(data.status === 'sent' ? 'Test email sent!' : data.message || 'Test failed')
+                      } catch {
+                        setMessage('Failed to send test email')
+                      }
+                    }}
+                    className={`px-5 py-2.5 font-medium rounded-lg transition-colors ${
+                      isDark ? 'bg-gray-700 hover:bg-gray-600 text-white border border-gray-600' : 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">{skill.icon}</span>
-                        <div>
-                          <p className="font-medium">{skill.name}</p>
-                          <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                            {skill.description}
-                          </p>
-                        </div>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={skill.enabled}
-                          onChange={() => {
-                            setSkills(prev => prev.map(s =>
-                              s.id === skill.id ? { ...s, enabled: !s.enabled } : s
-                            ))
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className={`w-11 h-6 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all ${
-                          isDark ? 'bg-gray-600 peer-checked:bg-blue-600' : 'bg-gray-300 peer-checked:bg-blue-600'
-                        }`}>
-                          <div className={`absolute top-[2px] left-[2px] bg-white border rounded-full h-5 w-5 transition-all ${
-                            skill.enabled ? 'translate-x-5' : ''
-                          }`} />
-                        </div>
-                      </label>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            
-            <div className={`rounded-xl border ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} shadow-sm`}>
-              <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                <h2 className="text-lg font-semibold">Custom Skills</h2>
-                <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                  Add custom skill definitions for specialized workflows
-                </p>
-              </div>
-              <div className="p-6">
-                <button className={`w-full py-3 rounded-lg border-2 border-dashed ${
-                  isDark ? 'border-gray-600 text-gray-400 hover:border-blue-500 hover:text-blue-400' : 'border-gray-300 text-gray-500 hover:border-blue-500 hover:text-blue-600'
-                }`}>
-                  + Add Custom Skill
-                </button>
+                    Send Test Email
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -810,9 +863,9 @@ export function Settings() {
           <div className="space-y-6">
             <div className={`rounded-xl border ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} shadow-sm`}>
               <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                <h2 className="text-lg font-semibold">🔌 Nanobot Plugin Channels</h2>
+                <h2 className="text-lg font-semibold">Data Source Plugins</h2>
                 <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                  Enable external data sources and services for BioDockify AI to fetch information from
+                  Enable external data sources and services for CrewAI agents to fetch information from
                 </p>
               </div>
               <div className="p-6 space-y-3">
@@ -934,7 +987,7 @@ export function Settings() {
                   </div>
                   <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-700">
                     <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>Stack</span>
-                    <span className="font-medium">React + FastAPI + RDKit</span>
+                    <span className="font-medium">React + FastAPI + RDKit + CrewAI</span>
                   </div>
                   <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-700">
                     <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>Docking</span>
@@ -957,9 +1010,11 @@ export function Settings() {
                   { icon: '🧪', name: 'ChemDraw', desc: '2D/3D molecule editor' },
                   { icon: '🔬', name: 'Docking', desc: 'Vina/GNINA/RF scoring' },
                   { icon: '⚡', name: 'MD Simulation', desc: 'Molecular dynamics' },
-                  { icon: '🤖', name: 'AI Assistant', desc: 'LLM-powered chat' },
+                  { icon: '🤖', name: 'CrewAI Agents', desc: '7-agent multi-agent system' },
                   { icon: '📊', name: 'QSAR Modeling', desc: 'Predictive analysis' },
                   { icon: '💊', name: 'Pharmacophore', desc: 'Feature-based screening' },
+                  { icon: '🛡️', name: 'ADMET', desc: 'Toxicity and drug-likeness' },
+                  { icon: '📧', name: 'Notifications', desc: 'Email job alerts' },
                 ].map(f => (
                   <div key={f.name} className={`p-3 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-gray-50'}`}>
                     <div className="text-xl mb-1">{f.icon}</div>

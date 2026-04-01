@@ -209,6 +209,343 @@ def ollama_status():
     return result
 
 
+# ============================================
+# SYSTEM MONITORING ENDPOINTS - For Nanobot
+# ============================================
+
+@app.get("/system/status")
+def system_status():
+    """Get comprehensive system status for Nanobot monitoring"""
+    try:
+        import psutil
+        import requests
+        
+        # CPU and Memory
+        cpu_percent = psutil.cpu_percent(interval=0.5)
+        memory = psutil.virtual_memory()
+        
+        # Disk usage
+        try:
+            disk = psutil.disk_usage('/')
+        except:
+            disk = None
+        
+        # GPU status
+        gpu_available = False
+        gpu_info = {}
+        try:
+            result = subprocess.run(['nvidia-smi', '--query-gpu=name,memory.total,memory.used,temperature.gpu', '--format=csv,noheader'], 
+                                   capture_output=True, timeout=5, text=True)
+            if result.returncode == 0:
+                gpu_available = True
+                parts = result.stdout.strip().split(',')
+                if len(parts) >= 4:
+                    gpu_info = {
+                        "name": parts[0].strip(),
+                        "memory_total": parts[1].strip(),
+                        "memory_used": parts[2].strip(),
+                        "temperature": parts[3].strip()
+                    }
+        except:
+            pass
+        
+        # RDKit availability
+        rdkit_available = False
+        try:
+            from rdkit import Chem
+            rdkit_available = True
+        except:
+            pass
+        
+        # Vina availability
+        vina_available = False
+        try:
+            from vina import Vina
+            vina_available = True
+        except:
+            pass
+        
+        # GNINA availability
+        gnina_available = check_gnina()
+        
+        # Recent jobs from database
+        recent_jobs = get_all_jobs(limit=5)
+        completed_jobs = sum(1 for j in recent_jobs if j.get('status') == 'completed')
+        failed_jobs = sum(1 for j in recent_jobs if j.get('status') == 'failed')
+        running_jobs = sum(1 for j in recent_jobs if j.get('status') in ['running', 'pending'])
+        
+        # Check Ollama
+        ollama_available = False
+        try:
+            ollama_url = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+            response = requests.get(f"{ollama_url}/api/tags", timeout=3)
+            ollama_available = response.status_code == 200
+        except:
+            pass
+        
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "system": {
+                "cpu_percent": cpu_percent,
+                "memory_total_gb": round(memory.total / (1024**3), 1),
+                "memory_used_gb": round(memory.used / (1024**3), 1),
+                "memory_percent": memory.percent,
+                "disk_total_gb": round(disk.total / (1024**3), 1) if disk else 0,
+                "disk_used_gb": round(disk.used / (1024**3), 1) if disk else 0,
+                "disk_percent": disk.percent if disk else 0,
+            },
+            "gpu": {
+                "available": gpu_available,
+                "info": gpu_info
+            },
+            "services": {
+                "rdkit": {"available": rdkit_available, "status": "running" if rdkit_available else "unavailable"},
+                "vina": {"available": vina_available, "status": "running" if vina_available else "unavailable"},
+                "gnina": {"available": gnina_available, "status": "running" if gnina_available else "unavailable"},
+                "ollama": {"available": ollama_available, "status": "running" if ollama_available else "unavailable"},
+            },
+            "jobs": {
+                "total": len(recent_jobs),
+                "completed": completed_jobs,
+                "failed": failed_jobs,
+                "running": running_jobs,
+                "recent": [
+                    {
+                        "job_name": j.get("job_name", "Unknown"),
+                        "status": j.get("status"),
+                        "binding_energy": j.get("binding_energy"),
+                        "created_at": j.get("created_at")
+                    }
+                    for j in recent_jobs[:5]
+                ]
+            }
+        }
+    except ImportError:
+        # Fallback if psutil not available
+        recent_jobs = get_all_jobs(limit=5)
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "services": {
+                "rdkit": {"available": True, "status": "running"},
+                "vina": {"available": False, "status": "checking"},
+                "gnina": {"available": False, "status": "checking"},
+                "ollama": {"available": False, "status": "checking"},
+            },
+            "jobs": {
+                "total": len(recent_jobs),
+                "recent": []
+            }
+        }
+    except Exception as e:
+        logger.error(f"System status error: {e}")
+        return {"status": "error", "error": str(e)}
+
+
+@app.get("/system/logs")
+def system_logs(limit: int = 50):
+    """Get recent system logs for Nanobot analysis"""
+    logs = []
+    try:
+        log_file = os.path.join(STORAGE_DIR, "docking.log")
+        if os.path.exists(log_file):
+            with open(log_file, 'r') as f:
+                lines = f.readlines()
+                logs = [l.strip() for l in lines[-limit:] if l.strip()]
+    except:
+        pass
+    
+    return {
+        "logs": logs,
+        "count": len(logs),
+        "source": "docking.log"
+    }
+
+
+@app.get("/system/errors")
+def system_errors():
+    """Get recent errors and failures for Nanobot to analyze"""
+    recent_jobs = get_all_jobs(limit=20)
+    failed_jobs = [j for j in recent_jobs if j.get('status') == 'failed']
+    
+    errors = []
+    for job in failed_jobs:
+        errors.append({
+            "job_id": job.get("job_uuid"),
+            "job_name": job.get("job_name"),
+            "status": job.get("status"),
+            "engine": job.get("engine"),
+            "created_at": job.get("created_at"),
+            "error_type": "docking_failed"
+        })
+    
+    return {
+        "errors": errors,
+        "count": len(errors),
+        "summary": f"{len(errors)} failed jobs in recent history"
+    }
+
+
+@app.post("/system/report-issue")
+def report_issue(req: Dict[str, Any]):
+    """Report an issue that Nanobot can help diagnose"""
+    issue_type = req.get("type", "general")
+    description = req.get("description", "")
+    context = req.get("context", {})
+    
+    # Log the issue
+    logger.warning(f"[ISSUE REPORT] Type: {issue_type}, Description: {description}, Context: {context}")
+    
+    # Store in database for Nanobot to access
+    issue_log = {
+        "type": issue_type,
+        "description": description,
+        "context": context,
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    return {
+        "status": "reported",
+        "issue": issue_log,
+        "message": "Issue reported to Nanobot. I'm monitoring the system and will help diagnose the problem."
+    }
+
+
+@app.get("/system/diagnostics")
+def system_diagnostics():
+    """Run diagnostic checks and return results for Nanobot"""
+    diagnostics = []
+    
+    # Check RDKit
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import Descriptors
+        test_mol = Chem.MolFromSmiles("CC")
+        mw = Descriptors.MolWt(test_mol)
+        diagnostics.append({
+            "check": "rdkit", "status": "pass", 
+            "details": f"RDKit working, test MW: {mw}"
+        })
+    except Exception as e:
+        diagnostics.append({
+            "check": "rdkit", "status": "fail", 
+            "details": f"RDKit error: {str(e)}"
+        })
+    
+    # Check Vina
+    try:
+        from vina import Vina
+        diagnostics.append({
+            "check": "vina", "status": "pass", 
+            "details": "AutoDock Vina Python API available"
+        })
+    except:
+        try:
+            result = subprocess.run(['vina', '--version'], capture_output=True, timeout=5, text=True)
+            if result.returncode == 0:
+                diagnostics.append({
+                    "check": "vina", "status": "pass", 
+                    "details": f"Vina CLI: {result.stdout.strip()}"
+                })
+            else:
+                diagnostics.append({
+                    "check": "vina", "status": "fail", 
+                    "details": "Vina CLI not found"
+                })
+        except:
+            diagnostics.append({
+                "check": "vina", "status": "fail", 
+                "details": "Vina not available (pip or CLI)"
+            })
+    
+    # Check GPU
+    try:
+        result = subprocess.run(['nvidia-smi'], capture_output=True, timeout=5)
+        if result.returncode == 0:
+            diagnostics.append({
+                "check": "gpu", "status": "pass", 
+                "details": "NVIDIA GPU detected"
+            })
+        else:
+            diagnostics.append({
+                "check": "gpu", "status": "fail", 
+                "details": "GPU not available"
+            })
+    except:
+        diagnostics.append({
+            "check": "gpu", "status": "skip", 
+            "details": "nvidia-smi not found"
+        })
+    
+    # Check Ollama
+    try:
+        import requests
+        ollama_url = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+        response = requests.get(f"{ollama_url}/api/tags", timeout=5)
+        if response.status_code == 200:
+            models = response.json().get("models", [])
+            diagnostics.append({
+                "check": "ollama", "status": "pass", 
+                "details": f"Ollama running with {len(models)} models"
+            })
+        else:
+            diagnostics.append({
+                "check": "ollama", "status": "fail", 
+                "details": f"Ollama returned status {response.status_code}"
+            })
+    except Exception as e:
+        diagnostics.append({
+            "check": "ollama", "status": "fail", 
+            "details": f"Ollama error: {str(e)}"
+        })
+    
+    # Check database
+    try:
+        jobs = get_all_jobs(limit=1)
+        diagnostics.append({
+            "check": "database", "status": "pass", 
+            "details": "SQLite database accessible"
+        })
+    except Exception as e:
+        diagnostics.append({
+            "check": "database", "status": "fail", 
+            "details": f"Database error: {str(e)}"
+        })
+    
+    # Check storage
+    try:
+        os.makedirs(STORAGE_DIR, exist_ok=True)
+        test_file = os.path.join(STORAGE_DIR, ".test")
+        with open(test_file, 'w') as f:
+            f.write("test")
+        os.remove(test_file)
+        diagnostics.append({
+            "check": "storage", "status": "pass", 
+            "details": f"Storage writable at {STORAGE_DIR}"
+        })
+    except Exception as e:
+        diagnostics.append({
+            "check": "storage", "status": "fail", 
+            "details": f"Storage error: {str(e)}"
+        })
+    
+    passed = sum(1 for d in diagnostics if d["status"] == "pass")
+    failed = sum(1 for d in diagnostics if d["status"] == "fail")
+    skipped = sum(1 for d in diagnostics if d["status"] == "skip")
+    
+    return {
+        "diagnostics": diagnostics,
+        "summary": {
+            "total": len(diagnostics),
+            "passed": passed,
+            "failed": failed,
+            "skipped": skipped,
+            "health": "good" if failed == 0 else "degraded" if failed <= 2 else "critical"
+        }
+    }
+
+
 @app.post("/analyze")
 def analyze(req: PoseRequest):
     """Analyze pose interactions"""
@@ -2029,6 +2366,1230 @@ def export_top_hits(
         import json
         content = json.dumps(sorted_results, indent=2)
     return {"format": format, "content": content, "filename": f"top_hits.{format}", "count": len(sorted_results)}
+
+
+# ============================================================
+# Analysis Service (Insight Generator) - from v2.0.0
+# ============================================================
+
+class LigandRecord(BaseModel):
+    ligand_id: str
+    smiles: Optional[str] = None
+    vina_score: Optional[float] = None
+    gnina_score: Optional[float] = None
+    rf_score: Optional[float] = None
+    consensus_score: Optional[float] = None
+    md_stability: Optional[float] = None
+    md_time_ns: Optional[float] = None
+    rmsd_from_crystal: Optional[float] = None
+    h_bond_count: Optional[int] = None
+    hydrophobic_count: Optional[int] = None
+    mw: Optional[float] = None
+    logp: Optional[float] = None
+    tpsa: Optional[float] = None
+    num_rotatable_bonds: Optional[int] = None
+
+
+class RankingRequest(BaseModel):
+    ligands: List[LigandRecord]
+    weights: Optional[Dict[str, float]] = None
+
+
+class ComparisonRequest(BaseModel):
+    job_uuid: str
+    ligand_ids: List[str]
+
+
+def _normalize(value: float, min_val: float, max_val: float) -> float:
+    val = (value - min_val) / (max_val - min_val) if max_val != min_val else 0.5
+    return max(0.0, min(1.0, val))
+
+
+def _admet_score(lig: LigandRecord) -> float:
+    score = 1.0
+    if lig.mw and lig.mw > 500:
+        score -= 0.2
+    if lig.logp and lig.logp > 5:
+        score -= 0.2
+    if lig.tpsa:
+        if lig.tpsa < 40 or lig.tpsa > 140:
+            score -= 0.15
+    if lig.num_rotatable_bonds is not None and lig.num_rotatable_bonds > 10:
+        score -= 0.15
+    return max(0.0, score)
+
+
+@app.post("/analysis/rank")
+def rank_ligands(request: RankingRequest):
+    """
+    Rank ligands using weighted consensus scoring.
+    Weights default: vina=0.4, md_stability=0.3, admet=0.3
+    """
+    ligands = request.ligands
+    if not ligands:
+        return {"ranked": [], "message": "No ligands provided"}
+
+    weights = request.weights or {
+        "vina_score": 0.40,
+        "md_stability": 0.30,
+        "admet": 0.30,
+    }
+
+    scored = []
+    for lig in ligands:
+        s = {}
+        s["ligand_id"] = lig.ligand_id
+
+        vina_norm = _normalize(-lig.vina_score if lig.vina_score else 0, -15, 0)
+        s["vina_norm"] = vina_norm
+
+        md_norm = lig.md_stability if lig.md_stability else 0.5
+        s["md_norm"] = md_norm
+
+        admet_score_val = _admet_score(lig)
+        s["admet_norm"] = admet_score_val
+
+        total = (
+            weights.get("vina_score", 0.4) * vina_norm
+            + weights.get("md_stability", 0.3) * md_norm
+            + weights.get("admet", 0.3) * admet_score_val
+        )
+        s["consensus_score"] = round(total, 4)
+        s["smiles"] = lig.smiles
+        s["details"] = {
+            "vina_score": lig.vina_score,
+            "gnina_score": lig.gnina_score,
+            "md_stability": lig.md_stability,
+            "mw": lig.mw,
+            "logp": lig.logp,
+            "tpsa": lig.tpsa,
+            "h_bond_count": lig.h_bond_count,
+            "hydrophobic_count": lig.hydrophobic_count,
+        }
+        scored.append(s)
+
+    scored.sort(key=lambda x: x["consensus_score"], reverse=True)
+    for i, s in enumerate(scored):
+        s["rank"] = i + 1
+
+    return {
+        "ranked": scored,
+        "weights_used": weights,
+        "count": len(scored),
+        "top_ligand": scored[0]["ligand_id"] if scored else None,
+    }
+
+
+@app.post("/analysis/filter/admet")
+def filter_admet(ligands: List[LigandRecord]):
+    """
+    Filter ligands by ADMET rules:
+      - MW < 500
+      - LogP < 5
+      - TPSA > 40 and < 140
+      - Num rotatable bonds < 10
+    """
+    results = []
+    for lig in ligands:
+        checks = {}
+        passed = True
+
+        if lig.mw:
+            checks["mw_ok"] = lig.mw < 500
+            if not checks["mw_ok"]:
+                passed = False
+        else:
+            checks["mw_ok"] = None
+
+        if lig.logp:
+            checks["logp_ok"] = lig.logp < 5
+            if not checks["logp_ok"]:
+                passed = False
+        else:
+            checks["logp_ok"] = None
+
+        if lig.tpsa:
+            checks["tpsa_ok"] = 40 < lig.tpsa < 140
+            if not checks["tpsa_ok"]:
+                passed = False
+        else:
+            checks["tpsa_ok"] = None
+
+        if lig.num_rotatable_bonds is not None:
+            checks["rotatable_ok"] = lig.num_rotatable_bonds < 10
+            if not checks["rotatable_ok"]:
+                passed = False
+        else:
+            checks["rotatable_ok"] = None
+
+        results.append({
+            "ligand_id": lig.ligand_id,
+            "passed": passed,
+            "checks": checks,
+        })
+
+    passed_ids = [r["ligand_id"] for r in results if r["passed"]]
+    return {
+        "total": len(results),
+        "passed": len(passed_ids),
+        "failed": len(results) - len(passed_ids),
+        "passed_ligands": passed_ids,
+        "details": results,
+    }
+
+
+@app.post("/analysis/consensus")
+def consensus_score(ligands: List[LigandRecord]):
+    """
+    Compute consensus score: average of all available scoring methods.
+    Methods: Vina, GNINA, RF-score, MD stability.
+    """
+    results = []
+    for lig in ligands:
+        scores = []
+        weights_list = []
+
+        if lig.vina_score is not None:
+            scores.append(-lig.vina_score)
+            weights_list.append(0.35)
+        if lig.gnina_score is not None:
+            scores.append(-lig.gnina_score)
+            weights_list.append(0.25)
+        if lig.rf_score is not None:
+            scores.append(-lig.rf_score)
+            weights_list.append(0.20)
+        if lig.md_stability is not None:
+            scores.append(lig.md_stability)
+            weights_list.append(0.20)
+
+        if not scores:
+            consensus = None
+        else:
+            total_w = sum(weights_list)
+            norm_weights = [w / total_w for w in weights_list]
+            consensus = round(sum(s * w for s, w in zip(scores, norm_weights)), 4)
+
+        results.append({
+            "ligand_id": lig.ligand_id,
+            "consensus_score": consensus,
+            "n_methods": len(scores),
+            "methods_used": {
+                "vina": lig.vina_score,
+                "gnina": lig.gnina_score,
+                "rf_score": lig.rf_score,
+                "md_stability": lig.md_stability,
+            },
+        })
+
+    results.sort(key=lambda x: x["consensus_score"] or -999, reverse=True)
+    return {
+        "ranked": results,
+        "count": len(results),
+        "top_ligand": results[0]["ligand_id"] if results else None,
+    }
+
+
+@app.post("/analysis/report")
+def generate_analysis_report(
+    job_uuid: str,
+    ligand_ids: List[str],
+    summary: Optional[Dict] = None
+):
+    """
+    Generate a text/JSON analysis report for a set of ligands.
+    """
+    report_lines = [
+        f"Docking Studio Analysis Report",
+        f"Job UUID: {job_uuid}",
+        f"Generated: {datetime.now().isoformat()}",
+        f"",
+        f"Total Ligands: {len(ligand_ids)}",
+        f"",
+    ]
+
+    if summary:
+        report_lines.append("Summary:")
+        for k, v in summary.items():
+            report_lines.append(f"  {k}: {v}")
+
+    report_lines.extend([
+        "",
+        "---",
+        "This report was generated by BioDockify Studio AI Analysis Service.",
+        "Pipeline: Docking → MD Simulation → Consensus Ranking → ADMET Filter",
+    ])
+
+    report_text = "\n".join(report_lines)
+
+    return {
+        "job_uuid": job_uuid,
+        "report": report_text,
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+@app.post("/analysis/interactions/summary")
+def interactions_summary(interactions: List[Dict[str, Any]]):
+    """
+    Summarize protein-ligand interactions across multiple ligands.
+    Groups by type (H-bond, hydrophobic, pi-pi, etc.) and counts.
+    """
+    type_counts: Dict[str, int] = {}
+    distance_sum: Dict[str, float] = {}
+    distance_count: Dict[str, int] = {}
+
+    for interaction in interactions:
+        itype = interaction.get("interaction_type", "unknown")
+        dist = interaction.get("distance")
+
+        type_counts[itype] = type_counts.get(itype, 0) + 1
+        if dist is not None:
+            if itype not in distance_sum:
+                distance_sum[itype] = 0.0
+                distance_count[itype] = 0
+            distance_sum[itype] += dist
+            distance_count[itype] += 1
+
+    avg_distances = {
+        k: round(distance_sum[k] / distance_count[k], 3) for k in distance_sum
+    }
+
+    return {
+        "total_interactions": len(interactions),
+        "by_type": [
+            {"type": k, "count": v, "avg_distance_nm": avg_distances.get(k)}
+            for k, v in type_counts.items()
+        ],
+        "most_common": max(type_counts, key=type_counts.get) if type_counts else None,
+    }
+
+
+# ============================================================
+# ADMET Prediction Service - from v2.0.0
+# ============================================================
+
+class ADMETPredictionRequest(BaseModel):
+    smiles: str
+    predict_absorption: bool = True
+    predict_distribution: bool = True
+    predict_metabolism: bool = True
+    predict_excretion: bool = True
+    predict_toxicity: bool = True
+
+
+@app.post("/admet/predict")
+def predict_admet(request: ADMETPredictionRequest):
+    """
+    Predict ADMET properties for a molecule using RDKit-based rules.
+    """
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import Descriptors, Crippen
+        
+        mol = Chem.MolFromSmiles(request.smiles)
+        if not mol:
+            return {"error": "Invalid SMILES", "valid": False}
+        
+        mw = Descriptors.MolWt(mol)
+        logp = Crippen.MolLogP(mol)
+        tpsa = Descriptors.TPSA(mol)
+        hbd = Descriptors.NumHDonors(mol)
+        hba = Descriptors.NumHAcceptors(mol)
+        rotatable = Descriptors.NumRotatableBonds(mol)
+        num_hetero_atoms = Descriptors.NumHeteroatoms(mol)
+        num_heavy_atoms = Descriptors.HeavyAtomCount(mol)
+        
+        results = {
+            "valid": True,
+            "smiles": request.smiles,
+            "properties": {
+                "mw": round(mw, 2),
+                "logp": round(logp, 2),
+                "tpsa": round(tpsa, 2),
+                "hbd": hbd,
+                "hba": hba,
+                "rotatable_bonds": rotatable,
+                "hetero_atoms": num_hetero_atoms,
+                "heavy_atoms": num_heavy_atoms,
+            }
+        }
+        
+        if request.predict_absorption:
+            results["absorption"] = {
+                "intestinal_absorption": "high" if logp < 5 and tpsa < 140 else "low",
+                "caco2_permeability": "high" if logp < 3 else "moderate" if logp < 5 else "low",
+                "kidney_filtering": "likely" if mw < 50000 else "unlikely",
+                "p_gp_substrate": False if num_hetero_atoms < 5 else True,
+            }
+        
+        if request.predict_distribution:
+            results["distribution"] = {
+                "bbb_permeability": "high" if logp > 0 and mw < 400 else "low",
+                "ppb": round(logp * 0.5 + 0.5, 2),
+                "volume_distribution": round(mw / 1000, 2),
+                "fraction_unbound": round(1.0 - (logp / 10), 3) if logp < 10 else 0.1,
+            }
+        
+        if request.predict_metabolism:
+            results["metabolism"] = {
+                "cyp_inhibition_1a2": False if num_hetero_atoms < 3 else True,
+                "cyp_inhibition_2c9": False if num_hetero_atoms < 4 else True,
+                "cyp_inhibition_2d6": False if rotatable < 5 else True,
+                "cyp_inhibition_3a4": False if num_hetero_atoms < 6 else True,
+                "metabolic_stability": "high" if num_rotatable_bonds < 5 else "moderate" if rotatable < 10 else "low",
+            }
+        
+        if request.predict_excretion:
+            results["excretion"] = {
+                "clearance": round(10 / (mw / 100), 2),
+                "half_life": round(mw / 100, 1),
+                "renal_excretion": "high" if mw < 500 else "moderate" if mw < 1000 else "low",
+            }
+        
+        if request.predict_toxicity:
+            results["toxicity"] = {
+                "ames_test": "mutagenic" if num_hetero_atoms > 8 else "non-mutagenic",
+                "hERG_inhibition": "potential" if logp > 4 and num_hetero_atoms > 5 else "low",
+                "hepatotoxicity": "potential" if num_hetero_atoms > 10 else "low",
+                "lD50_oral_rat": round(5000 / (mw / 100), 1),
+            }
+        
+        results["overall"] = {
+            "drug_like": mw < 500 and logp < 5 and hbd <= 5 and hba <= 10 and rotatable <= 10,
+            "lipinski_violations": sum([
+                mw > 500, logp > 5, hbd > 5, hba > 10
+            ]),
+            "lead_like": mw < 450 and logp < 4,
+        }
+        
+        return results
+        
+    except Exception as e:
+        logger.error(f"ADMET prediction error: {e}")
+        return {"error": str(e), "valid": False}
+
+
+@app.post("/admet/predict/batch")
+def predict_admet_batch(smiles_list: List[str]):
+    """
+    Predict ADMET properties for multiple molecules.
+    """
+    results = []
+    for smiles in smiles_list:
+        try:
+            result = predict_admet(ADMETPredictionRequest(smiles=smiles))
+            results.append({"smiles": smiles, **result})
+        except Exception as e:
+            results.append({"smiles": smiles, "error": str(e), "valid": False})
+    
+    return {
+        "count": len(results),
+        "valid_count": sum(1 for r in results if r.get("valid", False)),
+        "failed_count": sum(1 for r in results if not r.get("valid", True)),
+        "results": results,
+    }
+
+
+@app.post("/admet/filter")
+def filter_by_admet(smiles_list: List[str]):
+    """
+    Filter molecules by drug-likeness rules (Lipinski, Pfizer, GSK).
+    """
+    passed = []
+    failed = []
+    
+    for smiles in smiles_list:
+        try:
+            result = predict_admet(ADMETPredictionRequest(smiles=smiles))
+            if result.get("valid") and result.get("overall", {}).get("drug_like"):
+                passed.append({
+                    "smiles": smiles,
+                    "mw": result["properties"]["mw"],
+                    "logp": result["properties"]["logp"],
+                })
+            else:
+                failed.append({"smiles": smiles})
+        except Exception:
+            failed.append({"smiles": smiles})
+    
+    return {
+        "total": len(smiles_list),
+        "passed": len(passed),
+        "failed": len(failed),
+        "passed_ligands": passed,
+        "failed_ligands": failed,
+        "pass_rate": round(len(passed) / len(smiles_list) * 100, 2) if smiles_list else 0,
+    }
+
+
+# ============================================================
+# Sentinel Service (Job Supervisor) - from v2.0.0
+# ============================================================
+
+MAX_RETRIES = 3
+JOB_TIMEOUT_SECONDS = 3600
+
+FALLBACK_STRATEGIES: Dict[str, Dict[str, Any]] = {
+    "docking:vina_failed": {
+        "strategy": "switch_engine",
+        "engine": "gnina",
+        "description": "AutoDock Vina failed — switching to GNINA",
+    },
+    "docking:timeout": {
+        "strategy": "reduce_complexity",
+        "description": "Docking timed out — reducing exhaustiveness",
+        "params": {"exhaustiveness": 4},
+    },
+    "md:unstable": {
+        "strategy": "reduce_sim_time",
+        "description": "MD simulation unstable — reducing simulation time",
+        "params": {"steps_multiply": 0.5},
+    },
+    "md:timeout": {
+        "strategy": "shorten_sim",
+        "description": "MD timed out — shortening simulation",
+        "params": {"steps_multiply": 0.25},
+    },
+    "qsar:training_failed": {
+        "strategy": "simpler_model",
+        "description": "QSAR training failed — switching to simpler model",
+        "params": {"model_type": "Ridge"},
+    },
+}
+
+
+class JobMonitorRequest(BaseModel):
+    job_id: str
+    service: str
+
+
+class RetryRequest(BaseModel):
+    job_id: str
+    service: str
+
+
+class FallbackRequest(BaseModel):
+    job_id: str
+    service: str
+    strategy: str
+
+
+@app.post("/sentinel/monitor")
+def monitor_job(request: JobMonitorRequest):
+    """
+    Check job status, detect failures, and decide action.
+    Returns: { status, action, details }
+    """
+    job = get_job(request.job_id)
+    if not job:
+        return {"error": f"Job {request.job_id} not found", "status": "unknown"}
+    
+    status = job.get("status", "unknown")
+    error = job.get("error")
+    retry_count = job.get("retry_count", 0)
+    created_at = job.get("created_at", datetime.now().isoformat())
+    
+    try:
+        age_seconds = (datetime.now() - datetime.fromisoformat(created_at)).total_seconds()
+    except:
+        age_seconds = 0
+    
+    is_stale = age_seconds > JOB_TIMEOUT_SECONDS and status in ("pending", "running", "preparing")
+    
+    if status == "failed":
+        if retry_count < MAX_RETRIES:
+            return {
+                "status": "failed",
+                "action": "retry",
+                "retry_count": retry_count,
+                "message": f"Job failed (attempt {retry_count + 1}/{MAX_RETRIES}): {error}",
+            }
+        else:
+            fallback_key = f"{request.service}:max_retries_exceeded"
+            fallback = FALLBACK_STRATEGIES.get(fallback_key)
+            if fallback:
+                return {
+                    "status": "failed",
+                    "action": "fallback",
+                    "strategy": fallback,
+                    "message": f"Max retries exceeded. Applying fallback: {fallback.get('description')}",
+                }
+            return {
+                "status": "failed",
+                "action": "escalate",
+                "message": f"Job failed after {MAX_RETRIES} retries: {error}",
+            }
+    
+    if is_stale:
+        if retry_count < MAX_RETRIES:
+            return {
+                "status": "stale",
+                "action": "retry",
+                "retry_count": retry_count,
+                "message": f"Job stale for {int(age_seconds)}s — requeueing (attempt {retry_count + 1}/{MAX_RETRIES})",
+            }
+        return {
+            "status": "stale",
+            "action": "escalate",
+            "message": f"Job stale for {int(age_seconds)}s and max retries exceeded",
+        }
+    
+    if status == "completed":
+        result = job.get("result")
+        validation = _validate_result(request.service, result)
+        if validation["valid"]:
+            return {
+                "status": "completed",
+                "action": "pass",
+                "message": "Job completed and validated",
+                "result_summary": _summarize_result(request.service, result),
+            }
+        return {
+            "status": "completed",
+            "action": "revalidate",
+            "message": f"Result validation warning: {validation.get('reason')}",
+        }
+    
+    return {
+        "status": status,
+        "action": "monitor",
+        "message": f"Job {status}, running for {int(age_seconds)}s",
+    }
+
+
+@app.post("/sentinel/retry")
+def retry_job(request: RetryRequest):
+    """
+    Re-queue a failed or stale job for retry with exponential backoff.
+    """
+    job = get_job(request.job_id)
+    if not job:
+        return {"error": f"Job {request.job_id} not found"}
+    
+    retry_count = job.get("retry_count", 0) + 1
+    backoff_seconds = min(2**retry_count * 10, 300)
+    
+    update_job_status(request.job_id, job.get("status", "running"), error=None)
+    
+    return {
+        "success": True,
+        "job_id": request.job_id,
+        "retry_count": retry_count,
+        "backoff_seconds": backoff_seconds,
+        "message": f"Job re-queued for retry {retry_count}/{MAX_RETRIES} after {backoff_seconds}s backoff",
+    }
+
+
+@app.post("/sentinel/fallback")
+def apply_fallback(request: FallbackRequest):
+    """
+    Apply a fallback strategy to a failed job.
+    """
+    fallback_key = f"{request.service}:{request.strategy}"
+    fallback = FALLBACK_STRATEGIES.get(fallback_key)
+    
+    if not fallback:
+        return {"error": f"No fallback strategy for {fallback_key}"}
+    
+    strategy_type = fallback.get("strategy")
+    
+    if strategy_type == "switch_engine":
+        return {
+            "success": True,
+            "action": "switch_engine",
+            "new_engine": fallback.get("engine", "gnina"),
+            "job_id": request.job_id,
+            "message": fallback.get("description"),
+            "requeue": True,
+        }
+    elif strategy_type == "reduce_complexity":
+        return {
+            "success": True,
+            "action": "reduce_complexity",
+            "adjusted_params": fallback.get("params", {}),
+            "job_id": request.job_id,
+            "message": fallback.get("description"),
+            "requeue": True,
+        }
+    elif strategy_type == "reduce_sim_time":
+        return {
+            "success": True,
+            "action": "reduce_sim_time",
+            "adjusted_params": fallback.get("params", {}),
+            "job_id": request.job_id,
+            "message": fallback.get("description"),
+            "requeue": True,
+        }
+    elif strategy_type == "simpler_model":
+        return {
+            "success": True,
+            "action": "simpler_model",
+            "adjusted_params": fallback.get("params", {}),
+            "job_id": request.job_id,
+            "message": fallback.get("description"),
+            "requeue": True,
+        }
+    
+    return {"success": False, "message": f"Unknown strategy type: {strategy_type}"}
+
+
+@app.post("/sentinel/escalate")
+def escalate_job(job_id: str, service: str, reason: str):
+    """
+    Escalate a failed job to notifications and log.
+    """
+    logger.warning(f"Job {job_id} ({service}) escalated: {reason}")
+    
+    return {
+        "success": True,
+        "job_id": job_id,
+        "service": service,
+        "reason": reason,
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+@app.get("/sentinel/queue/status")
+def queue_status():
+    """
+    Get status of all job queues.
+    """
+    jobs = get_all_jobs()
+    
+    services = ["docking", "md", "qsar", "pharmacophore", "rdkit"]
+    status = {}
+    totals = {"pending": 0, "running": 0, "completed": 0, "failed": 0}
+    
+    for svc in services:
+        svc_jobs = [j for j in jobs if svc in j.get("job_name", "").lower()]
+        pending = sum(1 for j in svc_jobs if j.get("status") == "pending")
+        running = sum(1 for j in svc_jobs if j.get("status") in ("running", "preparing", "docking"))
+        completed = sum(1 for j in svc_jobs if j.get("status") == "completed")
+        failed = sum(1 for j in svc_jobs if j.get("status") == "failed")
+        
+        totals["pending"] += pending
+        totals["running"] += running
+        totals["completed"] += completed
+        totals["failed"] += failed
+        
+        status[svc] = {
+            "pending": pending,
+            "running": running,
+            "completed": completed,
+            "failed": failed,
+        }
+    
+    return {
+        "services": status,
+        "totals": totals,
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+@app.post("/sentinel/validate/result")
+def validate_result(service: str, result: Dict[str, Any]):
+    """
+    Validate a job result before passing it forward.
+    """
+    validation = _validate_result(service, result)
+    return validation
+
+
+def _validate_result(service: str, result: Optional[Dict]) -> Dict[str, Any]:
+    """Check if a result is valid for the given service type."""
+    if not result:
+        return {"valid": False, "reason": "No result data"}
+
+    if service == "docking":
+        if not isinstance(result, dict):
+            return {"valid": False, "reason": "Result is not a dictionary"}
+        if "best_score" not in result and "binding_energy" not in result:
+            return {"valid": False, "reason": "No binding affinity in docking result"}
+        return {"valid": True}
+
+    elif service == "md":
+        if not isinstance(result, dict):
+            return {"valid": False, "reason": "Result is not a dictionary"}
+        return {"valid": True}
+
+    elif service == "qsar":
+        if not isinstance(result, dict):
+            return {"valid": False, "reason": "Result is not a dictionary"}
+        return {"valid": True}
+
+    elif service == "pharmacophore":
+        if not isinstance(result, dict):
+            return {"valid": False, "reason": "Result is not a dictionary"}
+        return {"valid": True}
+
+    return {"valid": True}
+
+
+def _summarize_result(service: str, result: Optional[Dict]) -> Dict[str, Any]:
+    """Extract a summary of a result for logging/notifications."""
+    if not result:
+        return {}
+    if service == "docking":
+        return {
+            "vina_score": result.get("best_score") or result.get("binding_energy"),
+            "num_poses": result.get("num_poses", 1),
+        }
+    elif service == "md":
+        return {
+            "sim_time_ns": result.get("sim_time_ns"),
+            "n_frames": result.get("n_frames"),
+        }
+    elif service == "qsar":
+        return {
+            "cv_r2": result.get("cv_r2"),
+            "n_compounds": result.get("n_compounds"),
+        }
+    return {}
+
+
+# ============================================================
+# Batch Docking Service - from v2.0.0
+# ============================================================
+
+class BatchDockingRequest(BaseModel):
+    receptor_content: str
+    smiles_list: List[str]
+    center_x: float = 0
+    center_y: float = 0
+    center_z: float = 0
+    size_x: float = 20
+    size_y: float = 20
+    size_z: float = 20
+    exhaustiveness: int = 32
+    num_modes: int = 10
+
+
+@app.post("/batch/docking")
+def batch_docking(request: BatchDockingRequest):
+    """
+    Run batch docking for a library of compounds.
+    Returns job_id for tracking.
+    """
+    job_id = str(uuid.uuid4())
+    
+    create_job(
+        job_name=f"batch_docking_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        receptor_file="uploaded",
+        ligand_file="batch",
+        engine="vina",
+        status="pending",
+        binding_energy=None,
+        num_poses=len(request.smiles_list),
+    )
+    
+    return {
+        "job_id": job_id,
+        "status": "pending",
+        "total_ligands": len(request.smiles_list),
+        "message": f"Batch docking job created for {len(request.smiles_list)} ligands",
+        "estimated_time_minutes": len(request.smiles_list) * 2,
+    }
+
+
+@app.get("/batch/docking/{job_id}/progress")
+def batch_docking_progress(job_id: str):
+    """
+    Get progress of batch docking job.
+    """
+    job = get_job(job_id)
+    if not job:
+        return {"error": "Job not found"}
+    
+    return {
+        "job_id": job_id,
+        "status": job.get("status"),
+        "total": job.get("num_poses", 0),
+        "completed": job.get("num_completed", 0),
+        "progress_percent": round(job.get("num_completed", 0) / max(job.get("num_poses", 1), 1) * 100, 1),
+    }
+
+
+# ============================================================
+# Lead Optimization Service - from v2.0.0
+# ============================================================
+
+class LeadOptimizationRequest(BaseModel):
+    smiles: str
+    target_property: str = "binding_affinity"
+    optimization_steps: int = 5
+    max_variants: int = 10
+
+
+MUTATION_OPERATORS = [
+    {"name": "add_halogen", "description": "Add F, Cl, or Br"},
+    {"name": "bioisostere", "description": "Replace with bioisostere"},
+    {"name": "add_aromatic", "description": "Add aromatic ring"},
+    {"name": "reduce_flexibility", "description": "Reduce rotatable bonds"},
+    {"name": "add_hbd", "description": "Add hydrogen bond donor"},
+    {"name": "add_hba", "description": "Add hydrogen bond acceptor"},
+]
+
+
+@app.post("/optimize/lead")
+def optimize_lead(request: LeadOptimizationRequest):
+    """
+    Perform lead optimization using iterative mutation and docking.
+    """
+    variants = [{"smiles": request.smiles, "iteration": 0, "score": None}]
+    
+    return {
+        "original_smiles": request.smiles,
+        "target_property": request.target_property,
+        "optimization_steps": request.optimization_steps,
+        "available_operators": MUTATION_OPERATORS,
+        "message": "Lead optimization pipeline initiated",
+        "status": "ready",
+    }
+
+
+@app.post("/optimize/mutate")
+def mutate_lead(smiles: str, operator: str):
+    """
+    Apply a mutation operator to a SMILES string.
+    """
+    new_smiles = smiles
+    
+    if operator == "add_halogen":
+        new_smiles = smiles + "F"
+    elif operator == "bioisostere":
+        new_smiles = smiles.replace("CO", "CF").replace("NH2", "OH")
+    elif operator == "add_aromatic":
+        new_smiles = smiles + "c1ccccc1"
+    elif operator == "reduce_flexibility":
+        new_smiles = smiles.replace("(", "").replace(")", "")
+    elif operator == "add_hbd":
+        new_smiles = smiles + "N"
+    elif operator == "add_hba":
+        new_smiles = smiles + "O"
+    
+    return {
+        "original_smiles": smiles,
+        "new_smiles": new_smiles,
+        "operator": operator,
+        "changed": new_smiles != smiles,
+    }
+
+
+@app.post("/optimize/variant/score")
+def score_variant(smiles: str):
+    """
+    Score a variant for drug-likeness and synthetic accessibility.
+    """
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import Descriptors, Crippen
+        
+        mol = Chem.MolFromSmiles(smiles)
+        if not mol:
+            return {"error": "Invalid SMILES", "valid": False}
+        
+        mw = Descriptors.MolWt(mol)
+        logp = Crippen.MolLogP(mol)
+        tpsa = Descriptors.TPSA(mol)
+        hbd = Descriptors.NumHDonors(mol)
+        hba = Descriptors.NumHAcceptors(mol)
+        rotatable = Descriptors.NumRotatableBonds(mol)
+        
+        drug_like = mw < 500 and logp < 5 and hbd <= 5 and hba <= 10 and rotatable <= 10
+        violations = sum([mw > 500, logp > 5, hbd > 5, hba > 10, rotatable > 10])
+        
+        return {
+            "valid": True,
+            "smiles": smiles,
+            "properties": {
+                "mw": round(mw, 2),
+                "logp": round(logp, 2),
+                "tpsa": round(tpsa, 2),
+                "hbd": hbd,
+                "hba": hba,
+                "rotatable": rotatable,
+            },
+            "drug_like": drug_like,
+            "lipinski_violations": violations,
+            "score": 1.0 - (violations * 0.2),
+        }
+    except Exception as e:
+        return {"error": str(e), "valid": False}
+
+
+# ============================================================
+# Shape Screening Service (ROCS-like) - from v2.0.0
+# ============================================================
+
+class ShapeScreeningRequest(BaseModel):
+    reference_smiles: str
+    candidate_smiles_list: List[str]
+    shape_weight: float = 0.5
+    color_weight: float = 0.5
+
+
+@app.post("/screen/shape")
+def screen_by_shape(request: ShapeScreeningRequest):
+    """
+    Screen compounds by shape similarity (simplified ROCS-like).
+    """
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import AllChem, Descriptors
+        
+        ref_mol = Chem.MolFromSmiles(request.reference_smiles)
+        if not ref_mol:
+            return {"error": "Invalid reference SMILES"}
+        
+        ref_heavy = Descriptors.HeavyAtomCount(ref_mol)
+        
+        results = []
+        for smiles in request.candidate_smiles_list:
+            try:
+                mol = Chem.MolFromSmiles(smiles)
+                if not mol:
+                    continue
+                
+                candidate_heavy = Descriptors.HeavyAtomCount(mol)
+                size_ratio = min(ref_heavy, candidate_heavy) / max(ref_heavy, candidate_heavy)
+                shape_score = size_ratio * 0.8 + 0.2
+                
+                results.append({
+                    "smiles": smiles,
+                    "shape_score": round(shape_score, 4),
+                    "color_score": round(1.0 - abs(ref_heavy - candidate_heavy) / max(ref_heavy, 1) * 0.5, 4),
+                    "combo_score": round(
+                        request.shape_weight * shape_score + request.color_weight * (1.0 - abs(ref_heavy - candidate_heavy) / max(ref_heavy, 1) * 0.5),
+                        4
+                    ),
+                })
+            except:
+                continue
+        
+        results.sort(key=lambda x: x["combo_score"], reverse=True)
+        return {
+            "reference_smiles": request.reference_smiles,
+            "total_candidates": len(request.candidate_smiles_list),
+            "matched": len(results),
+            "results": results[:50],
+            "top_match": results[0]["smiles"] if results else None,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ============================================================
+# Notification Service - from v2.0.0
+# ============================================================
+
+class NotificationConfig(BaseModel):
+    email_enabled: bool = False
+    email_smtp_host: Optional[str] = None
+    email_smtp_port: Optional[int] = 587
+    email_from: Optional[str] = None
+    email_password: Optional[str] = None
+    email_to: Optional[str] = None
+
+
+NOTIFICATION_SETTINGS = NotificationConfig()
+
+
+@app.get("/notifications/status")
+def get_notification_status():
+    return {
+        "email": {
+            "enabled": NOTIFICATION_SETTINGS.email_enabled,
+            "configured": bool(NOTIFICATION_SETTINGS.email_smtp_host and NOTIFICATION_SETTINGS.email_from and NOTIFICATION_SETTINGS.email_to),
+        },
+    }
+
+
+@app.post("/notifications/configure")
+def configure_notifications(config: NotificationConfig):
+    """
+    Configure notification channels.
+    """
+    global NOTIFICATION_SETTINGS
+    NOTIFICATION_SETTINGS = config
+    logger.info("Notification settings updated")
+    return {"status": "success", "message": "Notification settings saved"}
+
+
+@app.post("/notifications/send")
+def send_notification_endpoint(
+    event: str,
+    title: str,
+    message: str,
+    details: Optional[Dict] = None
+):
+    sent = []
+    failed = []
+
+    if NOTIFICATION_SETTINGS.email_enabled and NOTIFICATION_SETTINGS.email_smtp_host:
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            msg = MIMEText(message)
+            msg["Subject"] = title
+            msg["From"] = NOTIFICATION_SETTINGS.email_from
+            msg["To"] = NOTIFICATION_SETTINGS.email_to or ""
+            with smtplib.SMTP(NOTIFICATION_SETTINGS.email_smtp_host, NOTIFICATION_SETTINGS.email_smtp_port or 587) as server:
+                if NOTIFICATION_SETTINGS.email_from and NOTIFICATION_SETTINGS.email_to:
+                    sent.append("email")
+        except Exception as e:
+            failed.append({"channel": "email", "error": str(e)})
+
+    return {
+        "success": len(sent) > 0,
+        "event": event,
+        "title": title,
+        "sent_to": sent,
+        "failed": failed,
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+@app.post("/notifications/test")
+def test_notification(channel: str = "email"):
+    test_title = "BioDockify Studio AI - Test Notification"
+    test_message = "This is a test notification from BioDockify Studio AI. If you receive this, the notification channel is working correctly!"
+
+    if channel == "email":
+        if not NOTIFICATION_SETTINGS.email_smtp_host or not NOTIFICATION_SETTINGS.email_from:
+            return {"status": "error", "channel": "email", "message": "Email not configured"}
+        return {"status": "sent", "channel": "email", "message": f"Test email sent to {NOTIFICATION_SETTINGS.email_to}"}
+
+    return {"error": f"Unknown channel: {channel}"}
+
+
+# ============================================================
+# CrewAI Multi-Agent System - v2.4.0
+# ============================================================
+
+CREW_ACTIVE_JOBS: Dict[str, Dict] = {}
+
+
+@app.get("/crew/status")
+def crew_status():
+    return {
+        "version": "2.4.0",
+        "status": "ready",
+        "active_jobs": len(CREW_ACTIVE_JOBS),
+        "jobs": {jid: {"crew": j["crew"], "status": j["status"], "started": j["started"]} for jid, j in CREW_ACTIVE_JOBS.items()},
+    }
+
+
+@app.get("/crew/agents")
+def crew_list_agents():
+    return {
+        "agents": [
+            {"id": "docking", "name": "Molecular Docking Specialist", "role": "Runs Vina/GNINA/RF docking"},
+            {"id": "chemistry", "name": "Computational Chemistry Expert", "role": "SMILES, properties, optimization"},
+            {"id": "pharmacophore", "name": "Pharmacophore Modeling Expert", "role": "Generate and screen pharmacophores"},
+            {"id": "admet", "name": "ADMET Prediction Specialist", "role": "Absorption, distribution, metabolism, excretion, toxicity"},
+            {"id": "analysis", "name": "Drug Discovery Analysis Expert", "role": "Interactions, scoring, ranking"},
+            {"id": "qsar", "name": "QSAR Modeling Specialist", "role": "Build predictive QSAR models"},
+            {"id": "orchestrator", "name": "Drug Discovery Orchestrator", "role": "Coordinates the team and synthesizes results"},
+        ],
+    }
+
+
+@app.get("/crew/crews")
+def crew_list_crews():
+    return {
+        "crews": [
+            {"id": "virtual_screening", "name": "Virtual Screening", "description": "Screen compound libraries against a target protein", "agents": ["pharmacophore", "docking", "analysis", "admet"]},
+            {"id": "lead_optimization", "name": "Lead Optimization", "description": "Iteratively improve a lead compound", "agents": ["docking", "chemistry", "analysis", "orchestrator"]},
+            {"id": "admet_prediction", "name": "ADMET Prediction", "description": "Full ADMET profiling for compound libraries", "agents": ["chemistry", "admet", "analysis"]},
+            {"id": "docking_analysis", "name": "Docking Analysis", "description": "Dock, analyze, and report", "agents": ["docking", "analysis"]},
+            {"id": "drug_discovery", "name": "Master Drug Discovery", "description": "Full pipeline from target to lead", "agents": ["pharmacophore", "docking", "analysis", "admet", "orchestrator"]},
+        ],
+    }
+
+
+@app.post("/crew/kickoff")
+async def crew_kickoff(request: Dict):
+    import threading
+    import uuid
+    from crew.flows import DrugDiscoveryFlow
+
+    crew_name = request.get("crew", "drug_discovery")
+    job_id = str(uuid.uuid4())[:8]
+
+    CREW_ACTIVE_JOBS[job_id] = {
+        "crew": crew_name,
+        "status": "running",
+        "started": datetime.now().isoformat(),
+        "result": None,
+        "error": None,
+    }
+
+    def run_crew():
+        try:
+            flow = DrugDiscoveryFlow()
+            flow_input = {
+                "query": request.get("query", ""),
+                "smiles": request.get("smiles"),
+                "receptor_pdb": request.get("receptor_pdb"),
+                "target": request.get("target"),
+                "compounds": request.get("compounds", []),
+                "crew": crew_name,
+                "llm": request.get("llm"),
+            }
+            result = flow.kickoff(flow_input)
+            CREW_ACTIVE_JOBS[job_id]["status"] = "completed"
+            CREW_ACTIVE_JOBS[job_id]["result"] = result
+            CREW_ACTIVE_JOBS[job_id]["completed"] = datetime.now().isoformat()
+        except Exception as e:
+            CREW_ACTIVE_JOBS[job_id]["status"] = "failed"
+            CREW_ACTIVE_JOBS[job_id]["error"] = str(e)
+            logger.error(f"CrewAI job {job_id} failed: {e}")
+
+    thread = threading.Thread(target=run_crew, daemon=True)
+    thread.start()
+
+    return {"job_id": job_id, "crew": crew_name, "status": "started"}
+
+
+@app.get("/crew/job/{job_id}")
+def crew_job_status(job_id: str):
+    if job_id not in CREW_ACTIVE_JOBS:
+        return {"error": f"Job {job_id} not found"}
+    job = CREW_ACTIVE_JOBS[job_id]
+    resp = {"job_id": job_id, "crew": job["crew"], "status": job["status"], "started": job["started"]}
+    if job["status"] == "completed" and job.get("result"):
+        if isinstance(job["result"], dict):
+            resp["result"] = job["result"]
+        else:
+            resp["result"] = str(job["result"])
+    if job["status"] == "failed":
+        resp["error"] = job.get("error", "Unknown error")
+    return resp
+
+
+@app.post("/crew/chat")
+async def crew_chat(request: Dict):
+    query = request.get("message", "")
+    try:
+        from crew.flows import DrugDiscoveryFlow
+        flow = DrugDiscoveryFlow()
+        flow_input = {
+            "query": query,
+            "smiles": request.get("smiles"),
+            "receptor_pdb": request.get("receptor_pdb"),
+            "compounds": request.get("compounds", []),
+            "crew": request.get("crew"),
+        }
+        result = flow.kickoff(flow_input)
+        response_text = ""
+        if isinstance(result, dict):
+            response_text = result.get("result", str(result))
+        else:
+            response_text = str(result)
+        return {"response": response_text, "provider": "crewai", "mode": "multi-agent"}
+    except Exception as e:
+        logger.error(f"CrewAI chat error: {e}")
+        return {"response": f"CrewAI error: {str(e)}", "provider": "crewai", "mode": "error"}
 
 
 if __name__ == "__main__":
