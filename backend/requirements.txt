@@ -3,7 +3,7 @@ uvicorn
 sqlalchemy
 pydantic
 biopython
-numpy
+numpy<2
 rdkit-pypi
 python-multipart>=0.0.22
 requests
