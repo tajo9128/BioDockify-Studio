@@ -1,139 +1,363 @@
 import { useState, useEffect } from 'react'
-import { apiClient } from '@/lib/apiClient'
+import { useTheme } from '@/contexts/ThemeContext'
 
 interface DockingResult {
   id: number
   job_uuid: string
+  pose_id: number
   ligand_name: string
-  vina_score: number
+  vina_score: number | null
   gnina_score: number | null
   rf_score: number | null
-  pdb_data: string
+  consensus: number | null
+  pdb_data: string | null
 }
 
 interface Job {
-  id: string
+  id: number
   job_uuid: string
   job_name: string
-  job_type: string
+  receptor_file: string | null
+  ligand_file: string | null
   status: string
   created_at: string
   completed_at: string | null
-  docking_results?: DockingResult[]
+  binding_energy: number | null
+  confidence_score: number | null
+  engine: string | null
 }
 
 export function Results() {
+  const { theme } = useTheme()
+  const isDark = theme === 'dark'
   const [jobs, setJobs] = useState<Job[]>([])
   const [selectedJob, setSelectedJob] = useState<Job | null>(null)
-  const [activeTab, setActiveTab] = useState<'all' | 'docking' | 'md' | 'qsar'>('all')
+  const [selectedResults, setSelectedResults] = useState<DockingResult[]>([])
+  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<'all' | 'completed' | 'running' | 'failed'>('all')
+
+  const bgClass = isDark ? 'bg-gray-900' : 'bg-gray-50'
+  const cardBg = isDark ? 'bg-gray-800' : 'bg-white'
+  const borderClass = isDark ? 'border-gray-700' : 'border-gray-200'
+  const textClass = isDark ? 'text-white' : 'text-gray-900'
+  const subtextClass = isDark ? 'text-gray-400' : 'text-gray-500'
+  const hoverClass = isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
 
   useEffect(() => {
-    apiClient.get('/jobs')
-      .then(({ data }) => {
-        const jobs = Array.isArray(data) ? data : (data.jobs ?? [])
-        setJobs(jobs)
-        if (jobs.length > 0) setSelectedJob(jobs[0])
-      })
-      .catch(console.error)
+    fetchJobs()
   }, [])
+
+  const fetchJobs = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/jobs')
+      const data = await res.json()
+      const jobList = data.jobs || []
+      setJobs(jobList)
+      if (jobList.length > 0 && !selectedJob) {
+        selectJob(jobList[0])
+      }
+    } catch (err) {
+      console.error('Failed to fetch jobs:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const selectJob = async (job: Job) => {
+    setSelectedJob(job)
+    try {
+      const res = await fetch(`/jobs/${job.job_uuid}/results`)
+      const data = await res.json()
+      setSelectedResults(data.results || [])
+    } catch (err) {
+      console.error('Failed to fetch results:', err)
+      setSelectedResults([])
+    }
+  }
+
+  const deleteJob = async (jobUuid: string) => {
+    if (!confirm('Delete this job and all its results?')) return
+    try {
+      await fetch(`/jobs/${jobUuid}`, { method: 'DELETE' })
+      setJobs(prev => prev.filter(j => j.job_uuid !== jobUuid))
+      if (selectedJob?.job_uuid === jobUuid) {
+        setSelectedJob(null)
+        setSelectedResults([])
+      }
+    } catch (err) {
+      console.error('Failed to delete job:', err)
+    }
+  }
 
   const filteredJobs = jobs.filter(job => {
     if (activeTab === 'all') return true
-    if (activeTab === 'docking') return job.job_type === 'docking'
-    if (activeTab === 'md') return job.job_type === 'md'
-    if (activeTab === 'qsar') return job.job_type === 'qsar'
+    if (activeTab === 'completed') return job.status === 'completed'
+    if (activeTab === 'running') return job.status === 'running' || job.status === 'pending'
+    if (activeTab === 'failed') return job.status === 'failed' || job.status === 'cancelled'
     return true
   })
 
+  const getStatusBadge = (status: string) => {
+    const baseClass = 'px-2 py-0.5 rounded-full text-xs font-medium'
+    switch (status) {
+      case 'completed':
+        return `${baseClass} ${isDark ? 'bg-green-900 text-green-300' : 'bg-green-100 text-green-700'}`
+      case 'running':
+      case 'pending':
+        return `${baseClass} ${isDark ? 'bg-blue-900 text-blue-300' : 'bg-blue-100 text-blue-700'}`
+      case 'failed':
+      case 'cancelled':
+        return `${baseClass} ${isDark ? 'bg-red-900 text-red-300' : 'bg-red-100 text-red-700'}`
+      default:
+        return `${baseClass} ${isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`
+    }
+  }
+
+  const getStatusDot = (status: string) => {
+    const baseClass = 'w-2 h-2 rounded-full'
+    switch (status) {
+      case 'completed':
+        return `${baseClass} bg-green-500`
+      case 'running':
+      case 'pending':
+        return `${baseClass} bg-blue-500 animate-pulse`
+      case 'failed':
+      case 'cancelled':
+        return `${baseClass} bg-red-500`
+      default:
+        return `${baseClass} bg-gray-400`
+    }
+  }
+
   return (
-    <div className="h-full flex">
-      <div className="w-72 bg-gray-50 border-r border-gray-200 overflow-y-auto">
-        <div className="p-4 border-b border-gray-200">
-          <h2 className="font-semibold text-gray-900">Results</h2>
-          <div className="flex gap-2 mt-3">
-            {(['all', 'docking', 'md', 'qsar'] as const).map(tab => (
+    <div className={`h-full flex ${bgClass}`}>
+      {/* Sidebar - Job List */}
+      <div className={`w-80 ${cardBg} ${borderClass} border-r overflow-hidden flex flex-col`}>
+        <div className={`p-4 ${borderClass} border-b`}>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className={`font-semibold ${textClass}`}>Job History</h2>
+            <button
+              onClick={fetchJobs}
+              className={`p-1.5 rounded-lg ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+              title="Refresh"
+            >
+              <svg className={`w-4 h-4 ${subtextClass}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+          </div>
+          
+          <div className="flex gap-1 flex-wrap">
+            {(['all', 'completed', 'running', 'failed'] as const).map(tab => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-colors ${
                   activeTab === tab
-                    ? 'bg-cyan-100 text-cyan-700'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    ? isDark ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white'
+                    : isDark ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'
                 }`}
               >
-                {tab.toUpperCase()}
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
               </button>
             ))}
           </div>
         </div>
 
-        <div className="divide-y divide-gray-200">
-          {filteredJobs.map(job => (
-            <button
-              key={job.id}
-              onClick={() => setSelectedJob(job)}
-              className={`w-full p-4 text-left hover:bg-gray-100 transition-colors ${
-                selectedJob?.id === job.id ? 'bg-cyan-50 border-l-4 border-cyan-500' : ''
-              }`}
-            >
-              <p className="font-medium text-gray-900 truncate">{job.job_name}</p>
-              <p className="text-xs text-gray-500 mt-1">{job.job_type}</p>
-              <div className="flex items-center gap-2 mt-2">
-                <span className={`w-2 h-2 rounded-full ${
-                  job.status === 'completed' ? 'bg-green-500' :
-                  job.status === 'running' ? 'bg-yellow-500' :
-                  job.status === 'failed' ? 'bg-red-500' : 'bg-gray-400'
-                }`}></span>
-                <span className="text-xs text-gray-500">{job.status}</span>
-              </div>
-            </button>
-          ))}
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center h-32">
+              <div className="animate-spin text-2xl">⟳</div>
+            </div>
+          ) : filteredJobs.length === 0 ? (
+            <div className={`text-center py-12 ${subtextClass}`}>
+              <div className="text-4xl mb-3">📋</div>
+              <p className="text-sm">No jobs found</p>
+              <p className="text-xs mt-1">Run a docking simulation to see history</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-200 dark:divide-gray-700">
+              {filteredJobs.map(job => (
+                <button
+                  key={job.job_uuid}
+                  onClick={() => selectJob(job)}
+                  className={`w-full p-4 text-left transition-colors ${
+                    selectedJob?.job_uuid === job.job_uuid
+                      ? isDark ? 'bg-blue-900/30 border-l-4 border-blue-500' : 'bg-blue-50 border-l-4 border-blue-500'
+                      : `${hoverClass}`
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <p className={`font-medium text-sm truncate ${textClass}`}>
+                        {job.job_name}
+                      </p>
+                      <p className={`text-xs ${subtextClass} mt-1`}>
+                        {new Date(job.created_at).toLocaleDateString()} {new Date(job.created_at).toLocaleTimeString()}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 ml-2">
+                      <span className={getStatusDot(job.status)} />
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteJob(job.job_uuid); }}
+                        className={`p-1 rounded opacity-0 group-hover:opacity-100 ${isDark ? 'hover:bg-red-900' : 'hover:bg-red-100'}`}
+                        title="Delete"
+                      >
+                        <svg className={`w-4 h-4 ${isDark ? 'text-red-400' : 'text-red-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    {getStatusBadge(job.status)}
+                    {job.binding_energy && (
+                      <span className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                        {job.binding_energy.toFixed(2)} kcal/mol
+                      </span>
+                    )}
+                  </div>
+                  {job.engine && (
+                    <p className={`text-xs ${subtextClass} mt-1`}>
+                      Engine: {job.engine.toUpperCase()}
+                    </p>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        
+        <div className={`p-3 ${borderClass} border-t ${subtextClass} text-xs text-center`}>
+          {jobs.length} total jobs | {jobs.filter(j => j.status === 'completed').length} completed
         </div>
       </div>
 
+      {/* Main Content - Job Details */}
       <div className="flex-1 overflow-y-auto">
         {selectedJob ? (
           <div className="p-6">
-            <div className="mb-6">
-              <h1 className="text-2xl font-bold text-gray-900">{selectedJob.job_name}</h1>
-              <p className="text-gray-500 mt-1">
-                {selectedJob.job_type} - Created {new Date(selectedJob.created_at).toLocaleString()}
-              </p>
+            {/* Job Header */}
+            <div className={`${cardBg} rounded-xl ${borderClass} border mb-6`}>
+              <div className={`p-6 ${borderClass} border-b`}>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h1 className={`text-2xl font-bold ${textClass}`}>{selectedJob.job_name}</h1>
+                    <p className={`mt-1 ${subtextClass}`}>
+                      Job ID: <code className={`${isDark ? 'bg-gray-700' : 'bg-gray-100'} px-1 rounded`}>{selectedJob.job_uuid}</code>
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {getStatusBadge(selectedJob.status)}
+                    <button
+                      onClick={() => deleteJob(selectedJob.job_uuid)}
+                      className={`p-2 rounded-lg ${isDark ? 'hover:bg-red-900/50' : 'hover:bg-red-100'}`}
+                      title="Delete Job"
+                    >
+                      <svg className={`w-5 h-5 ${isDark ? 'text-red-400' : 'text-red-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Job Info Grid */}
+              <div className="p-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                  <p className={`text-xs ${subtextClass} uppercase tracking-wide`}>Created</p>
+                  <p className={`font-medium ${textClass} mt-1`}>
+                    {new Date(selectedJob.created_at).toLocaleDateString()}
+                  </p>
+                  <p className={`text-sm ${subtextClass}`}>
+                    {new Date(selectedJob.created_at).toLocaleTimeString()}
+                  </p>
+                </div>
+                {selectedJob.completed_at && (
+                  <div>
+                    <p className={`text-xs ${subtextClass} uppercase tracking-wide`}>Completed</p>
+                    <p className={`font-medium ${textClass} mt-1`}>
+                      {new Date(selectedJob.completed_at).toLocaleDateString()}
+                    </p>
+                    <p className={`text-sm ${subtextClass}`}>
+                      {new Date(selectedJob.completed_at).toLocaleTimeString()}
+                    </p>
+                  </div>
+                )}
+                <div>
+                  <p className={`text-xs ${subtextClass} uppercase tracking-wide`}>Engine</p>
+                  <p className={`font-medium ${textClass} mt-1`}>
+                    {selectedJob.engine?.toUpperCase() || 'VINA'}
+                  </p>
+                </div>
+                <div>
+                  <p className={`text-xs ${subtextClass} uppercase tracking-wide`}>Best Score</p>
+                  <p className={`font-bold text-lg mt-1 ${selectedJob.binding_energy ? 'text-green-600' : subtextClass}`}>
+                    {selectedJob.binding_energy ? `${selectedJob.binding_energy.toFixed(2)} kcal/mol` : '-'}
+                  </p>
+                </div>
+              </div>
             </div>
 
-            {selectedJob.job_type === 'docking' && selectedJob.docking_results && (
-              <div className="bg-white rounded-lg shadow-sm">
-                <div className="px-6 py-4 border-b border-gray-200">
-                  <h2 className="font-semibold text-gray-900">Docking Poses</h2>
+            {/* Docking Results Table */}
+            {selectedResults.length > 0 && (
+              <div className={`${cardBg} rounded-xl ${borderClass} border`}>
+                <div className={`p-4 ${borderClass} border-b`}>
+                  <h2 className={`font-semibold ${textClass}`}>Docking Poses</h2>
+                  <p className={`text-sm ${subtextClass} mt-1`}>
+                    {selectedResults.length} pose(s) generated, sorted by Vina score (best binding energy)
+                  </p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full">
-                    <thead className="bg-gray-50">
+                    <thead className={isDark ? 'bg-gray-700/50' : 'bg-gray-50'}>
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pose</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ligand</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vina Score</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">CNN Score</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">RF Score</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                        <th className={`px-6 py-3 text-left text-xs font-medium ${subtextClass} uppercase tracking-wider`}>Rank</th>
+                        <th className={`px-6 py-3 text-left text-xs font-medium ${subtextClass} uppercase tracking-wider`}>Pose</th>
+                        <th className={`px-6 py-3 text-left text-xs font-medium ${subtextClass} uppercase tracking-wider`}>Vina Score</th>
+                        <th className={`px-6 py-3 text-left text-xs font-medium ${subtextClass} uppercase tracking-wider`}>CNN Score</th>
+                        <th className={`px-6 py-3 text-left text-xs font-medium ${subtextClass} uppercase tracking-wider`}>RF Score</th>
+                        <th className={`px-6 py-3 text-left text-xs font-medium ${subtextClass} uppercase tracking-wider`}>Consensus</th>
+                        <th className={`px-6 py-3 text-left text-xs font-medium ${subtextClass} uppercase tracking-wider`}>Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {selectedJob.docking_results.map((result, i) => (
-                        <tr key={result.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 text-sm font-medium text-gray-900">{i + 1}</td>
-                          <td className="px-6 py-4 text-sm text-gray-500">{result.ligand_name}</td>
-                          <td className="px-6 py-4 text-sm font-bold text-cyan-600">
-                            {result.vina_score?.toFixed(2)} kcal/mol
+                    <tbody className={`divide-y ${borderClass}`}>
+                      {selectedResults.map((result, i) => (
+                        <tr key={result.id} className={`${hoverClass} transition-colors ${i === 0 ? (isDark ? 'bg-green-900/20' : 'bg-green-50') : ''}`}>
+                          <td className="px-6 py-4">
+                            <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
+                              i === 0 
+                                ? 'bg-green-500 text-white' 
+                                : isDark ? 'bg-gray-600 text-white' : 'bg-gray-200 text-gray-700'
+                            }`}>
+                              {i + 1}
+                            </span>
                           </td>
-                          <td className="px-6 py-4 text-sm text-gray-500">
+                          <td className={`px-6 py-4 text-sm ${textClass}`}>{result.ligand_name || `Pose ${result.pose_id}`}</td>
+                          <td className="px-6 py-4">
+                            <span className={`font-bold ${
+                              (result.vina_score || 0) < -8 
+                                ? 'text-green-600' 
+                                : (result.vina_score || 0) < -6 
+                                  ? 'text-yellow-600' 
+                                  : isDark ? 'text-gray-300' : 'text-gray-700'
+                            }`}>
+                              {result.vina_score?.toFixed(2) || '-'}
+                            </span>
+                            <span className={`text-xs ${subtextClass} ml-1`}>kcal/mol</span>
+                          </td>
+                          <td className={`px-6 py-4 text-sm ${result.gnina_score ? 'text-purple-600' : subtextClass}`}>
                             {result.gnina_score?.toFixed(2) || '-'}
                           </td>
-                          <td className="px-6 py-4 text-sm text-gray-500">
+                          <td className={`px-6 py-4 text-sm ${result.rf_score ? 'text-blue-600' : subtextClass}`}>
                             {result.rf_score?.toFixed(2) || '-'}
                           </td>
+                          <td className={`px-6 py-4 text-sm ${result.consensus ? 'text-cyan-600' : subtextClass}`}>
+                            {result.consensus?.toFixed(2) || '-'}
+                          </td>
                           <td className="px-6 py-4">
-                            <button className="text-cyan-600 hover:text-cyan-800 text-sm font-medium">
+                            <button className={`text-sm font-medium ${isDark ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-800'}`}>
                               View
                             </button>
                           </td>
@@ -145,22 +369,21 @@ export function Results() {
               </div>
             )}
 
-            {selectedJob.status !== 'completed' && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mt-6">
-                <p className="text-yellow-800">
-                  Job status: {selectedJob.status}
-                  {selectedJob.status === 'failed' && ' - Check logs for details'}
-                </p>
+            {/* No Results */}
+            {selectedResults.length === 0 && selectedJob.status === 'completed' && (
+              <div className={`${cardBg} rounded-xl ${borderClass} border p-12 text-center`}>
+                <div className="text-4xl mb-3">📊</div>
+                <p className={`${subtextClass}`}>No results available for this job</p>
               </div>
             )}
           </div>
         ) : (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
-              <svg className="w-16 h-16 text-gray-300 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className={`w-20 h-20 mx-auto ${isDark ? 'text-gray-600' : 'text-gray-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              <p className="mt-4 text-gray-500">Select a job to view results</p>
+              <p className={`mt-4 ${subtextClass}`}>Select a job from the history to view results</p>
             </div>
           </div>
         )}

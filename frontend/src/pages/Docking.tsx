@@ -108,19 +108,57 @@ export function Docking() {
   const handleReceptorUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const content = await readFileContent(file)
-    setReceptor(file)
-    setReceptorContent(content)
-    setError('')
+    
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      
+      const res = await fetch('/upload', {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await res.json()
+      
+      if (data.path) {
+        const content = await readFileContent(file)
+        setReceptor(file)
+        setReceptorContent(content)
+        setError('')
+      }
+    } catch {
+      const content = await readFileContent(file)
+      setReceptor(file)
+      setReceptorContent(content)
+      setError('')
+    }
   }
 
   const handleLigandUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const content = await readFileContent(file)
-    setLigand(file)
-    setLigandContent(content)
-    setError('')
+    
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      
+      const res = await fetch('/upload', {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await res.json()
+      
+      if (data.path) {
+        const content = await readFileContent(file)
+        setLigand(file)
+        setLigandContent(content)
+        setError('')
+      }
+    } catch {
+      const content = await readFileContent(file)
+      setLigand(file)
+      setLigandContent(content)
+      setError('')
+    }
   }
 
   const handleDocking = async () => {

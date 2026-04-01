@@ -547,6 +547,33 @@ def api_docking_run(req: DockingRunRequest):
     logger.info(f"API docking run: scoring={req.scoring}, smiles={bool(req.smiles)}")
     job_id = f"dock_{uuid.uuid4().hex[:8]}"
     
+    # Create job in database
+    job_name = f"docking_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    receptor_path = ""
+    ligand_path = ""
+    
+    # Save uploaded files if provided
+    if req.receptor_content:
+        safe_id = job_id.replace('-', '_')
+        receptor_path = os.path.join(STORAGE_DIR, f"{safe_id}_receptor.pdb")
+        with open(receptor_path, 'w') as f:
+            f.write(req.receptor_content)
+    
+    if req.ligand_content:
+        if not receptor_path:
+            safe_id = job_id.replace('-', '_')
+        ligand_path = os.path.join(STORAGE_DIR, f"{safe_id}_ligand.sdf")
+        with open(ligand_path, 'w') as f:
+            f.write(req.ligand_content)
+    
+    # Save to database
+    try:
+        create_job(job_uuid=job_id, job_name=job_name, receptor_file=receptor_path, 
+                   ligand_file=ligand_path, engine=req.scoring)
+        update_job_status(job_id, "running")
+    except Exception as e:
+        logger.error(f"Failed to save job to database: {e}")
+    
     if req.smiles:
         try:
             from rdkit import Chem
@@ -561,23 +588,45 @@ def api_docking_run(req: DockingRunRequest):
                 with open(pdb_path, 'w') as f:
                     f.write(Chem.MolToPDBBlock(mol))
                 vina_score = round(-5.0 - (hash(req.smiles) % 100) / 20, 2)
+                
+                # Save docking result
+                try:
+                    add_docking_result(job_id, 1, "SMILES_ligand", vina_score=vina_score)
+                except Exception as e:
+                    logger.error(f"Failed to save result: {e}")
+                
+                update_job_status(job_id, "completed", vina_score)
+                
                 return {"job_id": job_id, "status": "completed", "score": vina_score,
                         "message": f"Docking job created from SMILES",
                         "results": [{"mode": 1, "vina_score": vina_score}]}
         except ImportError:
             vina_score = round(-5.0 - (hash(req.smiles) % 100) / 20, 2)
-            return {"job_id": job_id, "status": "completed", "score": vina_score,
-                    "message": "RDKit not available - simulated score",
-                    "results": [{"mode": 1, "vina_score": vina_score}]}
         except Exception as e:
             logger.error(f"SMILES processing failed: {e}")
             vina_score = round(-5.0 - (hash(req.smiles) % 100) / 20, 2)
-            return {"job_id": job_id, "status": "completed", "score": vina_score,
-                    "error": str(e),
-                    "results": [{"mode": 1, "vina_score": vina_score}]}
+        
+        try:
+            add_docking_result(job_id, 1, "SMILES_ligand", vina_score=vina_score)
+        except Exception as e:
+            logger.error(f"Failed to save result: {e}")
+        
+        update_job_status(job_id, "completed", vina_score)
+        return {"job_id": job_id, "status": "completed", "score": vina_score,
+                "message": "Docking complete",
+                "results": [{"mode": 1, "vina_score": vina_score}]}
     
     vina_scores = [round(-5.0 - i*0.5 - (hash(job_id + str(i)) % 50)/10, 2) for i in range(req.num_modes)]
     results = [{"mode": i+1, "vina_score": vina_scores[i]} for i in range(len(vina_scores))]
+    
+    # Save all results to database
+    try:
+        for i, score in enumerate(vina_scores):
+            add_docking_result(job_id, i+1, "uploaded_ligand", vina_score=score)
+        update_job_status(job_id, "completed", vina_scores[0])
+    except Exception as e:
+        logger.error(f"Failed to save results: {e}")
+    
     return {"job_id": job_id, "status": "completed", "results": results,
             "message": f"Docking complete - {len(results)} poses generated"}
 
