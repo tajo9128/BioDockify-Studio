@@ -1,5 +1,5 @@
 # BioDockify Studio AI - Single Container
-# All-in-one: React frontend + FastAPI backend + Vina/RDKit/Meeko
+# All-in-one: React frontend + FastAPI backend + RDKit
 
 # Stage 1: Build React frontend
 FROM node:20-alpine AS frontend-builder
@@ -9,11 +9,11 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-# Stage 2: Python + conda for scientific stack
+# Stage 2: Python with RDKit and scientific packages
 FROM python:3.11-slim
 
 LABEL maintainer="BioDockify"
-LABEL description="BioDockify Studio AI - Single container with RDKit, Vina, Meeko"
+LABEL description="BioDockify Studio AI - Single container with RDKit"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -26,26 +26,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 libsm6 libxml2 libxslt1.1 libxrender1 libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Miniconda for conda-forge packages (vina, rdkit, meeko)
-RUN wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \
-    bash /tmp/miniconda.sh -b -p /opt/conda && \
-    rm /tmp/miniconda.sh && \
-    /opt/conda/bin/conda clean -afy
-
-ENV PATH=/opt/conda/bin:$PATH
-
-# Configure conda channels to ONLY use conda-forge (avoids TOS issues with default channels)
-RUN conda config --remove channels defaults 2>/dev/null || true && \
-    conda config --add channels conda-forge && \
-    conda config --set channel_priority strict && \
-    conda install -y \
-    rdkit \
-    vina \
-    meeko \
-    && conda clean -afy
-
-# Install Python web framework via pip
+# Install Python packages (rdkit-pypi from pip, vina from pip)
 RUN pip install --no-cache-dir \
+    rdkit-pypi==2022.9.5 \
+    vina==1.2.3 \
     fastapi==0.109.2 \
     uvicorn[standard]==0.27.1 \
     python-multipart==0.0.9 \
@@ -53,6 +37,7 @@ RUN pip install --no-cache-dir \
     httpx==0.26.0 \
     sqlalchemy \
     biopython \
+    numpy \
     requests
 
 COPY backend/requirements.txt /app/backend/requirements.txt

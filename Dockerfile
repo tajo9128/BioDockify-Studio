@@ -35,25 +35,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Miniconda for conda-forge packages (vina, rdkit, meeko)
-RUN wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \
-    bash /tmp/miniconda.sh -b -p /opt/conda && \
-    rm /tmp/miniconda.sh && \
-    /opt/conda/bin/conda clean -afy
-
-ENV PATH=/opt/conda/bin:$PATH
-
-# Install scientific stack from conda-forge
-RUN conda install -y -c conda-forge \
-    rdkit \
-    vina \
-    meeko \
-    boost \
-    boost-cpp \
-    && conda clean -afy
-
 # Set working directory
 WORKDIR /app
+
+# Install scientific packages from pip (rdkit-pypi, vina)
+RUN pip install --no-cache-dir \
+    rdkit-pypi==2022.9.5 \
+    vina==1.2.3
 
 # Copy backend files (preserve directory structure)
 COPY backend/requirements.txt /app/backend/requirements.txt
