@@ -38,10 +38,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set working directory
 WORKDIR /app
 
-# Install scientific packages from pip (rdkit-pypi, vina)
+# Install scientific packages from pip
 RUN pip install --no-cache-dir \
-    rdkit-pypi==2022.9.5 \
-    vina==1.2.3
+    rdkit-pypi==2022.9.5
 
 # Copy backend files (preserve directory structure)
 COPY backend/requirements.txt /app/backend/requirements.txt
