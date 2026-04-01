@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
+import { useTheme } from '@/contexts/ThemeContext'
 
 const menuItems = [
   { path: '/', label: 'Dashboard' },
@@ -11,13 +12,17 @@ const menuItems = [
 
 export function Header() {
   const location = useLocation()
+  const { theme, toggleTheme } = useTheme()
+  const isDark = theme === 'dark'
   
   return (
-    <header className="bg-slate-800 text-white shadow-lg">
+    <header className={`shadow-sm transition-colors ${
+      isDark ? 'bg-gray-800 text-white' : 'bg-white text-gray-800 border-b border-gray-200'
+    }`}>
       <div className="flex items-center justify-between px-4 h-14">
         <div className="flex items-center gap-8">
           <Link to="/" className="flex items-center gap-2">
-            <span className="text-xl font-bold text-cyan-400">Bio</span>
+            <span className="text-xl font-bold text-blue-500">Bio</span>
             <span className="text-xl font-bold">Dockify</span>
           </Link>
           
@@ -28,8 +33,12 @@ export function Header() {
                 to={item.path}
                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                   location.pathname === item.path
-                    ? 'bg-slate-700 text-cyan-400'
-                    : 'text-gray-300 hover:bg-slate-700 hover:text-white'
+                    ? isDark
+                      ? 'bg-gray-700 text-blue-400'
+                      : 'bg-blue-50 text-blue-600'
+                    : isDark
+                      ? 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                 }`}
               >
                 {item.label}
@@ -38,10 +47,34 @@ export function Header() {
           </nav>
         </div>
         
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={toggleTheme}
+            className={`p-2 rounded-lg transition-colors ${
+              isDark
+                ? 'hover:bg-gray-700 text-yellow-400'
+                : 'hover:bg-gray-100 text-gray-600'
+            }`}
+            title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {isDark ? (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+              </svg>
+            )}
+          </button>
+          
           <Link
             to="/settings"
-            className="p-2 rounded-md hover:bg-slate-700 transition-colors"
+            className={`p-2 rounded-lg transition-colors ${
+              isDark
+                ? 'hover:bg-gray-700 text-gray-300'
+                : 'hover:bg-gray-100 text-gray-600'
+            }`}
             title="Settings"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

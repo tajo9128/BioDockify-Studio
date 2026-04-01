@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
+import { useTheme } from '@/contexts/ThemeContext'
 
 export function StatusBar() {
+  const { theme } = useTheme()
+  const isDark = theme === 'dark'
   const [gpuStatus, setGpuStatus] = useState<string>('Checking...')
   const [jobs] = useState(0)
   
@@ -12,7 +15,11 @@ export function StatusBar() {
   }, [])
   
   return (
-    <footer className="bg-slate-700 text-gray-300 px-4 py-1.5 text-xs flex items-center justify-between border-t border-slate-600">
+    <footer className={`px-4 py-1.5 text-xs flex items-center justify-between transition-colors ${
+      isDark 
+        ? 'bg-gray-800 text-gray-400 border-t border-gray-700' 
+        : 'bg-white text-gray-500 border-t border-gray-200'
+    }`}>
       <div className="flex items-center gap-4">
         <span className="flex items-center gap-1">
           <span className="w-2 h-2 rounded-full bg-green-500"></span>
@@ -22,7 +29,7 @@ export function StatusBar() {
       </div>
       <div className="flex items-center gap-4">
         <span>Jobs: {jobs}</span>
-        <span>v2.3.0</span>
+        <span>v2.3.5</span>
       </div>
     </footer>
   )
