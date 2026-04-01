@@ -139,6 +139,8 @@ export function Settings() {
     to: '',
   })
 
+  const [plugins, setPlugins] = useState(PLUGIN_CHANNELS)
+
   const [llmConfig, setLlmConfig] = useState({
     provider: 'ollama',
     model: 'llama3.2',

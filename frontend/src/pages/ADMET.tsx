@@ -1,23 +1,6 @@
 import { useState } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
 
-interface ADMETResult {
-  smiles: string
-  properties: {
-    molecular_weight: number
-    logp: number
-    tpsa: number
-    hbd: number
-    hba: number
-    rotatable_bonds: number
-    heavy_atoms: number
-  }
-  lipinski: { pass: boolean; violations: string[] }
-  veber: { pass: boolean; violations: string[] }
-  drug_likeness: boolean
-  rule_of_3: boolean
-}
-
 const SAMPLE_COMPOUNDS = [
   { name: 'Aspirin', smiles: 'CC(=O)Oc1ccccc1C(=O)O' },
   { name: 'Ibuprofen', smiles: 'CC(C)Cc1ccc(cc1)C(C)C(=O)O' },
@@ -116,18 +99,6 @@ export function ADMET() {
     } finally {
       setLoading(false)
     }
-  }
-
-  const renderPropertyRow = (label: string, value: number | string, threshold?: { max: number; color: string }) => {
-    const isOver = threshold && typeof value === 'number' && value > threshold.max
-    return (
-      <div className="flex justify-between items-center py-2 border-b border-gray-200 dark:border-gray-700">
-        <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>{label}</span>
-        <span className={`font-medium font-mono text-sm ${isOver ? 'text-red-500' : ''}`}>
-          {typeof value === 'number' ? value.toFixed(2) : value}
-        </span>
-      </div>
-    )
   }
 
   const renderPassFail = (label: string, passed: boolean) => (

@@ -137,7 +137,7 @@ export function Docking() {
     setLigandPreview({ atoms: 20, heavy_atoms: 15, mw: 250 })
   }
 
-  const handleSmilesSelect = async (smiles: string, name: string) => {
+  const handleSmilesSelect = async (smiles: string, _name: string) => {
     setLigandSmiles(smiles)
     setLigandFile(null)
     setLigandContent('')
