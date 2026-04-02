@@ -96,12 +96,22 @@ class OllamaProvider:
             return False
 
     def chat(self, prompt: str) -> str:
-        payload = {"model": self.model, "prompt": prompt, "stream": False}
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 4096,
+            "temperature": 0.7,
+        }
         response = requests.post(
-            f"{self.url}/api/generate", json=payload, timeout=OLLAMA_TIMEOUT * 2
+            f"{self.url}/v1/chat/completions",
+            json=payload,
+            headers=headers,
+            timeout=OLLAMA_TIMEOUT * 2,
         )
         response.raise_for_status()
-        return response.json()["response"]
+        data = response.json()
+        return data["choices"][0]["message"]["content"]
 
     def get_models(self) -> list:
         try:

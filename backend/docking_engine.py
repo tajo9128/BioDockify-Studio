@@ -199,7 +199,10 @@ def prepare_protein_from_content(pdb_content: str, output_dir: str = '/tmp') -> 
             logger.error("Failed to parse protein PDB")
             return None
         
-        mol = Chem.AddHs(mol, partialCargas=True)
+        try:
+            mol = Chem.AddHs(mol, addCoords=True)
+        except Exception as e:
+            logger.warning(f"AddHs failed ({e}), proceeding without hydrogens")
         
         pdbqt_content = mol_to_pdbqt(mol, is_ligand=False)
         

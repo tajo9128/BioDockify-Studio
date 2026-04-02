@@ -3,7 +3,6 @@ BioDockify Drug Discovery Flow - Master orchestration pipeline
 Routes user requests to the appropriate crew and synthesizes results.
 """
 
-from crewai import Flow, listen, start, router
 from crew.crews import (
     create_virtual_screening_crew,
     create_lead_optimization_crew,
@@ -14,22 +13,15 @@ from crew.crews import (
 from typing import Dict, Any, Optional
 
 
-class DrugDiscoveryFlow(Flow):
+class DrugDiscoveryFlow:
     """
     Master Drug Discovery Flow - Routes requests to appropriate crews.
-    
-    Supports:
-    - Virtual screening (screen compounds against a target)
-    - Lead optimization (improve a lead compound)
-    - ADMET prediction (profile compounds)
-    - Docking analysis (dock and analyze)
-    - Full pipeline (end-to-end drug discovery)
+    Plain Python class (no CrewAI Flow decorators).
     """
 
-    @start()
-    def receive_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        """Receive and parse user request."""
-        return {
+    def route(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """Route request to appropriate crew and return result."""
+        data = {
             "query": request.get("query", ""),
             "smiles": request.get("smiles"),
             "receptor_pdb": request.get("receptor_pdb"),
@@ -39,9 +31,13 @@ class DrugDiscoveryFlow(Flow):
             "llm": request.get("llm"),
         }
 
-    @router(receive_request)
-    def route_to_crew(self, data: Dict[str, Any]) -> str:
-        """Route to appropriate crew based on request."""
+        crew_name = self._resolve_crew_name(data)
+        handler = getattr(self, f"_run_{crew_name}", None)
+        if handler is None:
+            return {"error": f"Unknown crew: {crew_name}", "status": "failed"}
+        return handler(data)
+
+    def _resolve_crew_name(self, data: Dict[str, Any]) -> str:
         crew_name = data.get("crew_name", "").lower()
         query = data.get("query", "").lower()
 
@@ -57,9 +53,7 @@ class DrugDiscoveryFlow(Flow):
             return "docking_analysis"
         return "drug_discovery"
 
-    @listen("virtual_screening")
-    def run_virtual_screening(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Run virtual screening pipeline."""
+    def _run_virtual_screening(self, data: Dict[str, Any]) -> Dict[str, Any]:
         llm = data.get("llm")
         crew = create_virtual_screening_crew(llm)
         inputs = {
@@ -69,9 +63,7 @@ class DrugDiscoveryFlow(Flow):
         result = crew.kickoff(inputs=inputs)
         return {"crew": "virtual_screening", "result": result.raw, "status": "completed"}
 
-    @listen("lead_optimization")
-    def run_lead_optimization(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Run lead optimization pipeline."""
+    def _run_lead_optimization(self, data: Dict[str, Any]) -> Dict[str, Any]:
         llm = data.get("llm")
         crew = create_lead_optimization_crew(llm)
         inputs = {
@@ -81,20 +73,14 @@ class DrugDiscoveryFlow(Flow):
         result = crew.kickoff(inputs=inputs)
         return {"crew": "lead_optimization", "result": result.raw, "status": "completed"}
 
-    @listen("admet_prediction")
-    def run_admet_prediction(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Run ADMET prediction pipeline."""
+    def _run_admet_prediction(self, data: Dict[str, Any]) -> Dict[str, Any]:
         llm = data.get("llm")
         crew = create_admet_prediction_crew(llm)
-        inputs = {
-            "compounds": data.get("compounds", []),
-        }
+        inputs = {"compounds": data.get("compounds", [])}
         result = crew.kickoff(inputs=inputs)
         return {"crew": "admet_prediction", "result": result.raw, "status": "completed"}
 
-    @listen("docking_analysis")
-    def run_docking_analysis(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Run docking analysis pipeline."""
+    def _run_docking_analysis(self, data: Dict[str, Any]) -> Dict[str, Any]:
         llm = data.get("llm")
         crew = create_docking_analysis_crew(llm)
         inputs = {
@@ -104,9 +90,7 @@ class DrugDiscoveryFlow(Flow):
         result = crew.kickoff(inputs=inputs)
         return {"crew": "docking_analysis", "result": result.raw, "status": "completed"}
 
-    @listen("drug_discovery")
-    def run_full_pipeline(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Run full drug discovery pipeline."""
+    def _run_drug_discovery(self, data: Dict[str, Any]) -> Dict[str, Any]:
         llm = data.get("llm")
         crew = create_drug_discovery_crew(llm)
         inputs = {

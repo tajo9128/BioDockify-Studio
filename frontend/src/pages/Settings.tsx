@@ -3,24 +3,6 @@ import { useTheme } from '@/contexts/ThemeContext'
 
 const APP_VERSION = '2.4.0'
 
-const CREWAI_AGENTS = [
-  { id: 'docking', name: 'Molecular Docking Specialist', icon: '🧬', role: 'Runs Vina/GNINA/RF docking' },
-  { id: 'chemistry', name: 'Computational Chemistry Expert', icon: '⚗️', role: 'SMILES, properties, optimization' },
-  { id: 'pharmacophore', name: 'Pharmacophore Modeling Expert', icon: '💊', role: 'Generate and screen pharmacophores' },
-  { id: 'admet', name: 'ADMET Prediction Specialist', icon: '🛡️', role: 'Absorption, distribution, metabolism, excretion, toxicity' },
-  { id: 'analysis', name: 'Drug Discovery Analysis Expert', icon: '🔬', role: 'Interactions, scoring, ranking' },
-  { id: 'qsar', name: 'QSAR Modeling Specialist', icon: '📊', role: 'Build predictive QSAR models' },
-  { id: 'orchestrator', name: 'Drug Discovery Orchestrator', icon: '🧠', role: 'Coordinates the team and synthesizes results' },
-]
-
-const CREWAI_CREWS = [
-  { id: 'virtual_screening', name: 'Virtual Screening', description: 'Screen compound libraries against a target protein' },
-  { id: 'lead_optimization', name: 'Lead Optimization', description: 'Iteratively improve a lead compound' },
-  { id: 'admet_prediction', name: 'ADMET Prediction', description: 'Full ADMET profiling for compound libraries' },
-  { id: 'docking_analysis', name: 'Docking Analysis', description: 'Dock, analyze, and report' },
-  { id: 'drug_discovery', name: 'Master Drug Discovery', description: 'Full pipeline from target to lead' },
-]
-
 // Nanobot Plugins (channels/providers)
 const PLUGIN_CHANNELS = [
   { id: 'pubchem', name: 'PubChem', icon: '🧪', enabled: true, description: 'Fetch compounds and properties from PubChem' },
@@ -121,7 +103,7 @@ export function Settings() {
   const { theme, setTheme } = useTheme()
   const isDark = theme === 'dark'
   
-  const [activeTab, setActiveTab] = useState<'llm' | 'crewai' | 'notifications' | 'plugins' | 'system' | 'about'>('llm')
+  const [activeTab, setActiveTab] = useState<'llm' | 'notifications' | 'plugins' | 'system' | 'about'>('llm')
   const [showApiKey, setShowApiKey] = useState(false)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -314,7 +296,6 @@ export function Settings() {
         <div className="flex gap-1 mb-6 p-1 rounded-lg w-fit ${isDark ? 'bg-gray-800' : 'bg-gray-200'} overflow-x-auto">
           {([
             { key: 'llm', label: 'AI Provider', icon: '🤖' },
-            { key: 'crewai', label: 'CrewAI Agents', icon: '🧬' },
             { key: 'notifications', label: 'Email', icon: '📧' },
             { key: 'plugins', label: 'Plugins', icon: '🔌' },
             { key: 'system', label: 'System', icon: '⚙️' },
@@ -623,111 +604,6 @@ export function Settings() {
           </div>
         )}
 
-        {/* === CREWAI AGENTS TAB === */}
-        {activeTab === 'crewai' && (
-          <div className="space-y-6">
-            <div className={`rounded-xl border ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} shadow-sm`}>
-              <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                <h2 className="text-lg font-semibold">CrewAI Multi-Agent System</h2>
-                <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                  7 specialized AI agents working together as one brain for drug discovery
-                </p>
-              </div>
-              <div className="p-6 space-y-3">
-                {CREWAI_AGENTS.map(agent => (
-                  <div
-                    key={agent.id}
-                    className={`p-4 rounded-lg border ${
-                      isDark ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">{agent.icon}</span>
-                      <div>
-                        <p className="font-medium">{agent.name}</p>
-                        <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                          {agent.role}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className={`rounded-xl border ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} shadow-sm`}>
-              <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                <h2 className="text-lg font-semibold">Pre-built Crews</h2>
-                <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                  Workflows that combine agents for specific drug discovery tasks
-                </p>
-              </div>
-              <div className="p-6 space-y-3">
-                {CREWAI_CREWS.map(crew => (
-                  <div
-                    key={crew.id}
-                    className={`p-4 rounded-lg border ${
-                      isDark ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'
-                    }`}
-                  >
-                    <p className="font-medium">{crew.name}</p>
-                    <p className={`text-xs mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                      {crew.description}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className={`rounded-xl border ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} shadow-sm`}>
-              <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                <h2 className="text-lg font-semibold">Configuration</h2>
-              </div>
-              <div className="p-6 space-y-4">
-                <div>
-                  <label className={labelClass}>CrewAI LLM Provider</label>
-                  <p className={`text-xs mb-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                    CrewAI uses the same LLM settings from the AI Provider tab. Set OPENAI_API_KEY or OLLAMA_BASE_URL env vars for direct CrewAI use.
-                  </p>
-                </div>
-                <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-gray-50'}`}>
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input type="checkbox" defaultChecked className="w-5 h-5 text-blue-600 rounded" />
-                    <div>
-                      <p className="font-medium">Enable Memory</p>
-                      <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                        Allow agents to remember context between tasks
-                      </p>
-                    </div>
-                  </label>
-                </div>
-                <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-gray-50'}`}>
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input type="checkbox" defaultChecked className="w-5 h-5 text-blue-600 rounded" />
-                    <div>
-                      <p className="font-medium">Enable Reasoning</p>
-                      <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                        Agents use chain-of-thought reasoning for complex tasks
-                      </p>
-                    </div>
-                  </label>
-                </div>
-                <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-gray-50'}`}>
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input type="checkbox" defaultChecked className="w-5 h-5 text-blue-600 rounded" />
-                    <div>
-                      <p className="font-medium">Allow Delegation</p>
-                      <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                        Agents can delegate tasks to other agents
-                      </p>
-                    </div>
-                  </label>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* === EMAIL NOTIFICATIONS TAB === */}
         {activeTab === 'notifications' && (
           <div className="space-y-6">
@@ -1012,7 +888,7 @@ export function Settings() {
                   { icon: '🧪', name: 'ChemDraw', desc: '2D/3D molecule editor' },
                   { icon: '🔬', name: 'Docking', desc: 'Vina/GNINA/RF scoring' },
                   { icon: '⚡', name: 'MD Simulation', desc: 'Molecular dynamics' },
-                  { icon: '🤖', name: 'CrewAI Agents', desc: '7-agent multi-agent system' },
+                  { icon: '🤖', name: 'AI Assistant', desc: 'Multi-provider LLM chat' },
                   { icon: '📊', name: 'QSAR Modeling', desc: 'Predictive analysis' },
                   { icon: '💊', name: 'Pharmacophore', desc: 'Feature-based screening' },
                   { icon: '🛡️', name: 'ADMET', desc: 'Toxicity and drug-likeness' },
