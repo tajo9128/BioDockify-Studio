@@ -1380,6 +1380,45 @@ def api_chem_to_3d(req: Dict[str, Any]):
         return {"error": str(e)}
 
 
+@app.post("/api/chem/docking-prep")
+def api_chem_docking_prep(req: Dict[str, Any]):
+    """Convert SMILES to docking-ready PDBQT with 3D optimization"""
+    smiles = req.get("smiles", "")
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import AllChem, Descriptors
+
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            return {"error": "Invalid SMILES"}
+
+        mol = Chem.AddHs(mol)
+        params = AllChem.ETKDGv3()
+        params.randomSeed = 42
+        params.maxAttempts = 1000
+        AllChem.EmbedMolecule(mol, params)
+        AllChem.MMFFOptimizeMolecule(mol)
+
+        pdb = Chem.MolToPDBBlock(mol)
+        mw = Descriptors.MolWt(mol)
+        logp = AllChem.CalcCrippenDescriptors(mol)[0]
+        charge = Chem.GetFormalCharge(mol)
+        n_atoms = mol.GetNumAtoms()
+        n_rot = Descriptors.NumRotatableBonds(mol)
+
+        return {
+            "pdb": pdb,
+            "mw": round(mw, 2),
+            "logp": round(logp, 2),
+            "charge": charge,
+            "n_atoms": n_atoms,
+            "n_rotatable": n_rot,
+            "ready_for_docking": True
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/api/stats")
 def api_stats():
     """Get system statistics"""

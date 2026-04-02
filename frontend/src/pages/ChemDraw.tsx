@@ -39,6 +39,34 @@ const HETEROCYCLES = [
   { name: 'Azetidine', smiles: 'C1CNC1' },
 ]
 
+const AMINO_ACIDS = [
+  { name: 'Alanine', smiles: 'C[C@H](N)C(=O)O' },
+  { name: 'Glycine', smiles: 'NCC(=O)O' },
+  { name: 'Phenylalanine', smiles: 'N[C@@H](Cc1ccccc1)C(=O)O' },
+  { name: 'Tyrosine', smiles: 'N[C@@H](Cc1ccc(O)cc1)C(=O)O' },
+  { name: 'Tryptophan', smiles: 'N[C@@H](Cc1c[nH]c2ccccc12)C(=O)O' },
+  { name: 'Lysine', smiles: 'NCCCC[C@H](N)C(=O)O' },
+  { name: 'Arginine', smiles: 'NCCC[C@H](N)C(=O)O.NC(N)=N' },
+  { name: 'Aspartic Acid', smiles: 'N[C@@H](CC(=O)O)C(=O)O' },
+  { name: 'Glutamic Acid', smiles: 'N[C@@H](CCC(=O)O)C(=O)O' },
+  { name: 'Histidine', smiles: 'N[C@@H](Cc1c[nH]cn1)C(=O)O' },
+  { name: 'Cysteine', smiles: 'N[C@@H](CS)C(=O)O' },
+  { name: 'Methionine', smiles: 'CSCC[C@H](N)C(=O)O' },
+]
+
+const LINKERS = [
+  { name: 'Amide', smiles: 'NC(=O)' },
+  { name: 'Ester', smiles: 'COC(=O)' },
+  { name: 'Ether', smiles: 'COC' },
+  { name: 'Sulfonamide', smiles: 'NS(=O)(=O)' },
+  { name: 'Urea', smiles: 'NC(=O)N' },
+  { name: 'Triazole', smiles: 'c1cnnc[nH]1' },
+  { name: 'Alkyne', smiles: 'C#C' },
+  { name: 'Oxime', smiles: 'C=NO' },
+  { name: 'Hydrazone', smiles: 'C=NN' },
+  { name: 'Carbamate', smiles: 'COC(=O)N' },
+]
+
 const MUTATION_STRATEGIES = [
   { key: 'add_halogen', label: 'Add Halogen (F, Cl, Br)', icon: '+' },
   { key: 'add_oh', label: 'Add OH Group', icon: '+' },
@@ -87,6 +115,7 @@ export function ChemDraw() {
   const [showTemplates, setShowTemplates] = useState(false)
   const [templateFilter, setTemplateFilter] = useState('')
   const [showExport, setShowExport] = useState(false)
+  const [dockingPrep, setDockingPrep] = useState<any>(null)
   const canvas2dRef = useRef<HTMLCanvasElement>(null)
   const viewer3dRef = useRef<HTMLDivElement>(null)
 
@@ -469,6 +498,26 @@ export function ChemDraw() {
     }
   }
 
+  const prepareForDocking = async () => {
+    if (!smiles) return
+    setLoading(true)
+    try {
+      const res = await fetch('/api/chem/docking-prep', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ smiles })
+      })
+      const data = await res.json()
+      if (data.ready_for_docking) {
+        setDockingPrep(data)
+        setSuggestions(prev => [{ text: `✓ Ready for docking: ${data.n_atoms} atoms, charge ${data.charge}`, type: 'good' }, ...prev.slice(0, 4)])
+      }
+    } catch (e) {
+      console.error('Docking prep error:', e)
+    }
+    setLoading(false)
+  }
+
   const downloadFile = (content: string, filename: string, type: string) => {
     const blob = new Blob([content], { type })
     const url = URL.createObjectURL(blob)
@@ -518,6 +567,12 @@ export function ChemDraw() {
     t.name.toLowerCase().includes(templateFilter.toLowerCase()) ||
     t.smiles.toLowerCase().includes(templateFilter.toLowerCase())
   )
+  const filteredAminoAcids = AMINO_ACIDS.filter(t =>
+    t.name.toLowerCase().includes(templateFilter.toLowerCase())
+  )
+  const filteredLinkers = LINKERS.filter(t =>
+    t.name.toLowerCase().includes(templateFilter.toLowerCase())
+  )
 
   return (
     <div className="h-full flex flex-col bg-gray-100">
@@ -549,6 +604,9 @@ export function ChemDraw() {
         </div>
         <Button variant="outline" size="sm" onClick={analyzeMolecule} disabled={loading}>
           {loading ? '...' : 'Analyze'}
+        </Button>
+        <Button variant="outline" size="sm" onClick={prepareForDocking} disabled={loading}>
+          Docking Prep
         </Button>
         <Button variant="primary" size="sm" onClick={dockMolecule}>Dock</Button>
         <Button variant="secondary" size="sm" onClick={optimizeMolecule}>AI Optimize</Button>
@@ -599,7 +657,7 @@ export function ChemDraw() {
           <div className="p-3 border-b border-gray-200">
             <button onClick={() => setShowTemplates(!showTemplates)}
               className="w-full text-left text-xs font-semibold text-gray-700 flex justify-between items-center">
-              <span>📚 Template Library ({FDA_DRUGS.length + HETEROCYCLES.length})</span>
+              <span>📚 Template Library ({FDA_DRUGS.length + HETEROCYCLES.length + AMINO_ACIDS.length + LINKERS.length})</span>
               <span>{showTemplates ? '▲' : '▼'}</span>
             </button>
             {showTemplates && (
@@ -619,11 +677,33 @@ export function ChemDraw() {
                   ))}
                 </div>
                 <div className="text-xs font-medium text-gray-500 mb-1">Heterocycles</div>
-                <div className="grid grid-cols-2 gap-1 max-h-40 overflow-y-auto">
+                <div className="grid grid-cols-2 gap-1 max-h-32 overflow-y-auto mb-2">
                   {filteredTemplates.map(t => (
                     <button key={t.name}
                       onClick={() => { loadExample(t.name, t.smiles); setMolName(t.name); }}
                       className="text-xs px-2 py-1.5 bg-gray-50 hover:bg-purple-50 hover:text-purple-700 border border-gray-200 rounded text-left transition-colors"
+                      title={t.smiles}>
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+                <div className="text-xs font-medium text-gray-500 mb-1">Amino Acids</div>
+                <div className="grid grid-cols-2 gap-1 max-h-32 overflow-y-auto mb-2">
+                  {filteredAminoAcids.map(t => (
+                    <button key={t.name}
+                      onClick={() => { loadExample(t.name, t.smiles); setMolName(t.name); }}
+                      className="text-xs px-2 py-1.5 bg-gray-50 hover:bg-green-50 hover:text-green-700 border border-gray-200 rounded text-left transition-colors"
+                      title={t.smiles}>
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+                <div className="text-xs font-medium text-gray-500 mb-1">Linkers</div>
+                <div className="grid grid-cols-2 gap-1 max-h-32 overflow-y-auto">
+                  {filteredLinkers.map(t => (
+                    <button key={t.name}
+                      onClick={() => { loadExample(t.name, t.smiles); setMolName(t.name); }}
+                      className="text-xs px-2 py-1.5 bg-gray-50 hover:bg-amber-50 hover:text-amber-700 border border-gray-200 rounded text-left transition-colors"
                       title={t.smiles}>
                       {t.name}
                     </button>
@@ -758,6 +838,42 @@ export function ChemDraw() {
               </div>
             )}
           </div>
+
+          {dockingPrep && (
+            <div className="p-3 border-b border-gray-200">
+              <div className="text-xs font-semibold text-gray-700 mb-2">🎯 Docking Prep Status</div>
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs py-1 px-2 bg-green-50 rounded text-green-700">
+                  <span>Ready for docking</span>
+                  <span>✓</span>
+                </div>
+                <div className="flex justify-between text-xs py-1 px-2 bg-gray-50 rounded">
+                  <span>Atoms</span>
+                  <span className="font-mono">{dockingPrep.n_atoms}</span>
+                </div>
+                <div className="flex justify-between text-xs py-1 px-2 bg-gray-50 rounded">
+                  <span>Charge</span>
+                  <span className="font-mono">{dockingPrep.charge}</span>
+                </div>
+                <div className="flex justify-between text-xs py-1 px-2 bg-gray-50 rounded">
+                  <span>MW</span>
+                  <span className="font-mono">{dockingPrep.mw} Da</span>
+                </div>
+                <div className="flex justify-between text-xs py-1 px-2 bg-gray-50 rounded">
+                  <span>LogP</span>
+                  <span className="font-mono">{dockingPrep.logp}</span>
+                </div>
+                <div className="flex justify-between text-xs py-1 px-2 bg-gray-50 rounded">
+                  <span>Rotatable</span>
+                  <span className="font-mono">{dockingPrep.n_rotatable}</span>
+                </div>
+                <button onClick={() => { if (dockingPrep.pdb) downloadFile(dockingPrep.pdb, `${molName || 'molecule'}_3d.pdb`, 'chemical/x-pdb') }}
+                  className="w-full text-xs px-2 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded transition-colors">
+                  Download 3D PDB
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex-1 flex flex-col bg-gray-900">
