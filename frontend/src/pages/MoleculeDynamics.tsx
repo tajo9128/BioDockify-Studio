@@ -5,9 +5,8 @@ import Plot from 'react-plotly.js'
 import {
   runDynamics,
   runEquilibration,
-  resumeSimulation,
   calculateMMGBSA,
-  getGPUStatus,
+  getMDGPUStatus as getGPUStatus,
   getMDJobStatus,
   analyzeRMSD,
   analyzeRMSF,
@@ -79,8 +78,8 @@ export function MoleculeDynamics() {
   const [analysisError, setAnalysisError] = useState<string | null>(null)
   const [pubLoading, setPubLoading] = useState(false)
   const [gpuStatus, setGpuStatus] = useState<any>(null)
-  const [equilJobId, setEquilJobId] = useState<string | null>(null)
-  const [equilResult, setEquilResult] = useState<any>(null)
+  const [_equilJobId, setEquilJobId] = useState<string | null>(null)
+  const [equilResult, _setEquilResult] = useState<any>(null)
   const [mmgbsaResult, setMmgbsaResult] = useState<any>(null)
   const [mmgbsaLoading, setMmgbsaLoading] = useState(false)
 

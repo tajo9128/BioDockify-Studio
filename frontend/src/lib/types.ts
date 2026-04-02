@@ -42,6 +42,27 @@ export interface DockingResult {
   rf_score?: number
   consensus?: number
   pdb_data?: string
+  hydrophobic_term?: number
+  rotatable_penalty?: number
+  lipo_contact?: number
+  final_score?: number
+  composite_score?: number
+  constraint_penalty?: number
+}
+
+export interface DockingJob {
+  id: string
+  uuid: string
+  type: string
+  receptor_file: string
+  ligand_file: string
+  engine: string
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+  created_at: string
+  updated_at: string
+  results?: DockingResult[]
+  receptor_content?: string
+  ligand_pdb?: string
 }
 
 export interface Interaction {

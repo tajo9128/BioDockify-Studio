@@ -182,7 +182,7 @@ export async function calculateMMGBSA(request: { trajectory_path: string; recept
   return data
 }
 
-export async function getGPUStatus(): Promise<any> {
+export async function getMDGPUStatus(): Promise<any> {
   const { data } = await apiClient.get('/md/gpu/status')
   return data
 }

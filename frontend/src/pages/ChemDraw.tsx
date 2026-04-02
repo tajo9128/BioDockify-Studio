@@ -107,7 +107,7 @@ export function ChemDraw() {
   const [inchi, setInchi] = useState<string>('')
   const [inchiKey, setInchiKey] = useState<string>('')
   const [molBlock, setMolBlock] = useState<string>('')
-  const [pdb3d, setPdb3d] = useState<string>('')
+  const [_pdb3d, setPdb3d] = useState<string>('')
   const [conformers, setConformers] = useState<Array<{ energy: number; idx: number }>>([])
   const [selectedConformer, setSelectedConformer] = useState<number>(0)
   const [reactionMode, setReactionMode] = useState(false)

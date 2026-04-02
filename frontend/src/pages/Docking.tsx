@@ -17,6 +17,8 @@ interface DockingJob {
   created_at: string
   results?: any[]
   download_urls?: any
+  receptor_content?: string
+  ligand_pdb?: string
 }
 
 interface DockingResult {
@@ -24,6 +26,12 @@ interface DockingResult {
   vina_score: number
   gnina_score?: number
   rf_score?: number
+  hydrophobic_term?: number
+  rotatable_penalty?: number
+  lipo_contact?: number
+  final_score?: number
+  composite_score?: number
+  constraint_penalty?: number
 }
 
 const FDA_DRUGS = [
