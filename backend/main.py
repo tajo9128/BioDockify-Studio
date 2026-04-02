@@ -1862,6 +1862,23 @@ def get_benchmark_results(job_id: str):
     return {"job_id": job_id, "status": job.status, "progress": getattr(job, 'progress', 0)}
 
 
+class InteractionRequest(BaseModel):
+    ligand_pdb: str
+    receptor_pdb: str
+    cutoff: float = 4.5
+
+
+@app.post("/api/interactions/analyze")
+def analyze_interactions(req: InteractionRequest):
+    """Calculate protein-ligand interactions (H-bonds, hydrophobic, pi-stacking, etc.)"""
+    from analysis import calculate_protein_ligand_interactions
+    return calculate_protein_ligand_interactions(
+        ligand_mol_block=req.ligand_pdb,
+        receptor_pdb=req.receptor_pdb,
+        cutoff=req.cutoff
+    )
+
+
 @app.get("/{path:path}")
 async def serve_spa(path: str):
     """

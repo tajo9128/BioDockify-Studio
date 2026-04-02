@@ -296,3 +296,203 @@ def get_binding_site_residues(receptor_pdb: str, ligand_pdb: str,
     finally:
         os.unlink(rec_path)
         os.unlink(lig_path)
+
+
+def calculate_protein_ligand_interactions(
+    ligand_mol_block: str,
+    receptor_pdb: str,
+    cutoff: float = 4.5
+) -> Dict[str, Any]:
+    """
+    Calculate all protein-ligand interactions similar to Discovery Studio.
+    Returns detailed 2D/3D interaction data.
+    """
+    from rdkit import Chem
+
+    interactions = {
+        'hydrogen_bonds': [],
+        'hydrophobic_contacts': [],
+        'pi_stacking': [],
+        'pi_cation': [],
+        'salt_bridges': [],
+        'water_bridges': [],
+        'binding_site_residues': []
+    }
+
+    try:
+        ligand_mol = Chem.MolFromPDBBlock(ligand_mol_block, removeHs=False)
+        if not ligand_mol:
+            ligand_mol = Chem.MolFromPDBBlock(ligand_mol_block)
+        if not ligand_mol:
+            return {'error': 'Failed to parse ligand', **interactions}
+    except Exception as e:
+        return {'error': f'Ligand parse error: {e}', **interactions}
+
+    try:
+        conf = ligand_mol.GetConformer()
+    except Exception:
+        return {'error': 'No conformer in ligand', **interactions}
+
+    ligand_atoms = []
+    for i in range(ligand_mol.GetNumAtoms()):
+        pos = conf.GetAtomPosition(i)
+        atom = ligand_mol.GetAtom(i)
+        ligand_atoms.append({
+            'idx': i,
+            'symbol': atom.GetSymbol(),
+            'pos': [pos.x, pos.y, pos.z],
+            'formal_charge': atom.GetFormalCharge(),
+            'is_aromatic': atom.GetIsAromatic(),
+            'num_hs': atom.GetTotalNumHs()
+        })
+
+    receptor_residues = {}
+    for line in receptor_pdb.split('\n'):
+        if not (line.startswith('ATOM') or line.startswith('HETATM')):
+            continue
+        try:
+            resname = line[17:20].strip()
+            resseq = int(line[22:26])
+            chain = line[21].strip() or 'A'
+            atom_name = line[12:16].strip()
+            x, y, z = float(line[30:38]), float(line[38:46]), float(line[46:54])
+            element = line[76:78].strip() or atom_name[0]
+
+            key = (chain, resseq, resname)
+            if key not in receptor_residues:
+                receptor_residues[key] = {
+                    'resname': resname,
+                    'resseq': resseq,
+                    'chain': chain,
+                    'atoms': []
+                }
+            receptor_residues[key]['atoms'].append({
+                'name': atom_name,
+                'element': element,
+                'pos': [x, y, z]
+            })
+        except (ValueError, IndexError):
+            continue
+
+    hbond_donors = {'N', 'O'}
+    hydrophobic_residues = {'ALA', 'VAL', 'LEU', 'ILE', 'MET', 'PHE', 'TRP', 'TYR', 'PRO'}
+    aromatic_residues = {'PHE', 'TYR', 'TRP', 'HIS'}
+    positive_residues = {'ARG', 'LYS', 'HIS'}
+    negative_residues = {'ASP', 'GLU'}
+
+    for res_key, res_data in receptor_residues.items():
+        chain, resseq, resname = res_key
+
+        for res_atom in res_data['atoms']:
+            for lig_atom in ligand_atoms:
+                dist = np.linalg.norm(np.array(res_atom['pos']) - np.array(lig_atom['pos']))
+
+                if dist > cutoff:
+                    continue
+
+                if res_atom['element'] in hbond_donors and lig_atom['symbol'] in hbond_acceptors:
+                    if lig_atom['num_hs'] == 0 or lig_atom['symbol'] == 'O':
+                        interactions['hydrogen_bonds'].append({
+                            'donor_chain': chain,
+                            'donor_resname': resname,
+                            'donor_resseq': resseq,
+                            'donor_atom': res_atom['name'],
+                            'acceptor_idx': lig_atom['idx'],
+                            'acceptor_symbol': lig_atom['symbol'],
+                            'distance': round(dist, 2),
+                            'type': 'protein_donor'
+                        })
+
+                if lig_atom['symbol'] in hbond_donors and res_atom['element'] in hbond_acceptors:
+                    if res_atom['name'] in ['OD1', 'OD2', 'OE1', 'OE2', 'ND1', 'NE2', 'OG', 'OH']:
+                        interactions['hydrogen_bonds'].append({
+                            'acceptor_chain': chain,
+                            'acceptor_resname': resname,
+                            'acceptor_resseq': resseq,
+                            'acceptor_atom': res_atom['name'],
+                            'donor_idx': lig_atom['idx'],
+                            'donor_symbol': lig_atom['symbol'],
+                            'distance': round(dist, 2),
+                            'type': 'ligand_donor'
+                        })
+
+                if resname in hydrophobic_residues and res_atom['element'] == 'C':
+                    if lig_atom['symbol'] in ['C', 'S']:
+                        if dist < 4.0:
+                            interactions['hydrophobic_contacts'].append({
+                                'residue': resname,
+                                'resseq': resseq,
+                                'chain': chain,
+                                'atom': res_atom['name'],
+                                'ligand_idx': lig_atom['idx'],
+                                'distance': round(dist, 2)
+                            })
+
+        if resname in aromatic_residues:
+            ring_atoms = [a for a in res_data['atoms'] if a['element'] == 'C']
+            if len(ring_atoms) >= 4:
+                ring_center = np.mean([a['pos'] for a in ring_atoms], axis=0)
+                lig_aromatic = [a for a in ligand_atoms if a['is_aromatic'] and a['symbol'] == 'C']
+                if lig_aromatic:
+                    lig_center = np.mean([a['pos'] for a in lig_aromatic], axis=0)
+                    dist = np.linalg.norm(ring_center - lig_center)
+                    if dist < 5.5:
+                        interactions['pi_stacking'].append({
+                            'residue': resname,
+                            'resseq': resseq,
+                            'chain': chain,
+                            'distance': round(dist, 2),
+                            'type': 'pi_pi'
+                        })
+
+        if resname in positive_residues:
+            for lig_atom in ligand_atoms:
+                if lig_atom['formal_charge'] < 0:
+                    dist = np.linalg.norm(np.array(res_atom['pos']) - np.array(lig_atom['pos']))
+                    if dist < cutoff:
+                        interactions['pi_cation'].append({
+                            'residue': resname,
+                            'resseq': resseq,
+                            'chain': chain,
+                            'ligand_idx': lig_atom['idx'],
+                            'distance': round(dist, 2),
+                            'type': 'cation_anion'
+                        })
+
+        if resname in negative_residues:
+            for lig_atom in ligand_atoms:
+                if lig_atom['formal_charge'] > 0:
+                    dist = np.linalg.norm(np.array(res_atom['pos']) - np.array(lig_atom['pos']))
+                    if dist < cutoff:
+                        interactions['salt_bridges'].append({
+                            'residue': resname,
+                            'resseq': resseq,
+                            'chain': chain,
+                            'ligand_idx': lig_atom['idx'],
+                            'distance': round(dist, 2),
+                            'type': 'salt_bridge'
+                        })
+
+    binding_site = set()
+    for lig_atom in ligand_atoms:
+        for res_key, res_data in receptor_residues.items():
+            for res_atom in res_data['atoms']:
+                dist = np.linalg.norm(np.array(res_atom['pos']) - np.array(lig_atom['pos']))
+                if dist < cutoff:
+                    binding_site.add((res_key[2], res_key[1], res_key[0]))
+
+    interactions['binding_site_residues'] = [
+        {'resname': r[0], 'resseq': r[1], 'chain': r[2]}
+        for r in sorted(binding_site)
+    ]
+
+    interactions['summary'] = {
+        'total_hbonds': len(interactions['hydrogen_bonds']),
+        'total_hydrophobic': len(interactions['hydrophobic_contacts']),
+        'total_pi_stacking': len(interactions['pi_stacking']),
+        'total_pi_cation': len(interactions['pi_cation']),
+        'total_salt_bridges': len(interactions['salt_bridges']),
+        'binding_site_size': len(interactions['binding_site_residues'])
+    }
+
+    return interactions

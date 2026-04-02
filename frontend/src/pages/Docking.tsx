@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
+import { InteractionPanel } from '@/components/InteractionPanel'
+import { ExportPanel } from '@/components/ExportPanel'
 
 type WorkflowStage = 'upload' | 'preview' | 'results'
 type DockingStatus = 'pending' | 'preparing' | 'docking' | 'completed' | 'failed'
@@ -60,6 +62,8 @@ export function Docking() {
   const [scoringFunction, setScoringFunction] = useState<'vina' | 'gnina' | 'rf'>('vina')
   const [enableFlexibility, setEnableFlexibility] = useState(false)
   const [constraints, setConstraints] = useState<any[]>([])
+  const [showCartoon, setShowCartoon] = useState(true)
+  const [showSurface, setShowSurface] = useState(false)
   
   // Processing state
   const [isProcessing, setIsProcessing] = useState(false)
@@ -952,6 +956,15 @@ END`
               </tbody>
             </table>
           </div>
+
+          {/* Interaction Panel */}
+          {selectedJob?.receptor_content && selectedJob?.ligand_pdb && (
+            <InteractionPanel
+              ligandPdb={selectedJob.ligand_pdb}
+              receptorPdb={selectedJob.receptor_content}
+              isDark={isDark}
+            />
+          )}
         </div>
         
         {/* Right - 3D Viewer */}
@@ -959,6 +972,12 @@ END`
           <div className={`px-4 py-2 ${isDark ? 'bg-gray-800' : 'bg-gray-100'} flex items-center justify-between`}>
             <span className="text-sm font-medium">3D Viewer</span>
             <div className="flex gap-2">
+              <button onClick={() => setShowCartoon(!showCartoon)} className={`px-2 py-1 text-xs rounded ${showCartoon ? 'bg-cyan-600 text-white' : isDark ? 'bg-gray-700' : 'bg-white'}`}>
+                Cartoon
+              </button>
+              <button onClick={() => setShowSurface(!showSurface)} className={`px-2 py-1 text-xs rounded ${showSurface ? 'bg-cyan-600 text-white' : isDark ? 'bg-gray-700' : 'bg-white'}`}>
+                Surface
+              </button>
               <button onClick={init3DViewer} className={`px-2 py-1 text-xs rounded ${isDark ? 'bg-gray-700 hover:bg-gray-600' : 'bg-white hover:bg-gray-200'}`}>
                 Reset
               </button>
@@ -969,6 +988,7 @@ END`
               Loading 3D viewer...
             </div>
           </div>
+          <ExportPanel viewerRef={viewer3dRef} isDark={isDark} />
         </div>
       </div>
     </div>
