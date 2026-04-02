@@ -4049,6 +4049,246 @@ def crew_orchestrate(request: Dict[str, Any]):
         return {"exp_id": exp_id, "status": "failed", "error": str(e)}
 
 
+# ============================================================
+# Advanced AI Capabilities - v3.3.0
+# ============================================================
+
+# --- Meta-Parameter Learning ---
+
+@app.post("/ai/meta-params/suggest")
+def ai_meta_params_suggest(request: Dict[str, Any]):
+    """Suggest optimal parameters based on historical outcomes for similar targets."""
+    from crew.meta_optimizer import meta_learner
+    target_info = request.get("target_info", "")
+    service = request.get("service", "docking")
+    ligand_size = request.get("ligand_size", 0)
+    params = meta_learner.suggest_params(target_info, service, ligand_size)
+    return {"target_info": target_info, "service": service, "suggested_params": params}
+
+
+@app.post("/ai/meta-params/record")
+def ai_meta_params_record(request: Dict[str, Any]):
+    """Record simulation outcome for meta-learning."""
+    from crew.meta_optimizer import meta_learner
+    meta_learner.record_outcome(
+        target_info=request.get("target_info", ""),
+        service=request.get("service", "docking"),
+        params=request.get("params", {}),
+        success=request.get("success", False),
+        score=request.get("score", 0.0),
+        error=request.get("error"),
+    )
+    return {"status": "recorded"}
+
+
+@app.get("/ai/meta-params/stats")
+def ai_meta_params_stats(family: str = None):
+    """Get meta-parameter learning statistics."""
+    from crew.meta_optimizer import meta_learner
+    return meta_learner.get_family_stats(family)
+
+
+# --- Active Learning / Bayesian Optimization ---
+
+class ActiveLearningRequest(BaseModel):
+    candidate_pool: List[List[float]]
+    observed_X: Optional[List[List[float]]] = None
+    observed_y: Optional[List[float]] = None
+    n_suggest: int = 5
+
+
+_active_optimizers: Dict[str, BayesianOptimizer] = {}
+
+
+@app.post("/ai/active-learning/suggest")
+def ai_active_learning_suggest(request: ActiveLearningRequest):
+    """Suggest next compounds to evaluate using Bayesian optimization."""
+    from crew.active_learning import BayesianOptimizer
+    optimizer = BayesianOptimizer()
+    if request.observed_X and request.observed_y:
+        optimizer.fit(request.observed_X, request.observed_y)
+    suggestions = optimizer.suggest_next(request.candidate_pool, n_suggest=request.n_suggest)
+    return {"suggestions": suggestions, "n_candidates": len(request.candidate_pool)}
+
+
+@app.post("/ai/active-learning/run")
+def ai_active_learning_run(request: Dict[str, Any]):
+    """Run active learning loop with a scoring function."""
+    from crew.active_learning import ActiveLearningLoop, BayesianOptimizer
+    candidate_pool = request.get("candidate_pool", [])
+    scores = request.get("scores", [])
+    n_initial = request.get("n_initial", 20)
+    batch_size = request.get("batch_size", 10)
+
+    optimizer = BayesianOptimizer(n_initial=n_initial)
+    if candidate_pool and scores:
+        optimizer.fit(candidate_pool[:len(scores)], scores)
+
+    suggestions = optimizer.suggest_next(candidate_pool, n_suggest=batch_size)
+    return {
+        "suggestions": suggestions,
+        "model_metrics": optimizer.get_model_metrics(),
+        "n_observed": len(scores),
+    }
+
+
+# --- NL-to-DAG Compiler ---
+
+class NLWorkflowRequest(BaseModel):
+    natural_language: str
+    context: Optional[Dict[str, Any]] = None
+
+
+@app.post("/ai/workflow/compile")
+def ai_workflow_compile(request: NLWorkflowRequest):
+    """Compile natural language into executable DAG workflow."""
+    from crew.nl_compiler import nl_compiler
+    dag = nl_compiler.compile(request.natural_language, request.context)
+    dag = nl_compiler.validate_and_secure(dag)
+    return dag
+
+
+@app.post("/ai/workflow/execute")
+def ai_workflow_execute(request: Dict[str, Any]):
+    """Execute a compiled workflow DAG with self-healing."""
+    from crew.nl_compiler import nl_compiler, self_healing_executor
+    dag = request.get("dag")
+    if not dag:
+        nl_text = request.get("natural_language", "")
+        dag = nl_compiler.compile(nl_text, request.get("context"))
+        dag = nl_compiler.validate_and_secure(dag)
+
+    if not dag.get("is_safe"):
+        return {"status": "unsafe", "validation_errors": dag.get("validation_errors", [])}
+
+    results = []
+    for step in dag.get("steps", []):
+        result = self_healing_executor.execute_step(step)
+        results.append({"step_id": step.get("id"), "tool": step.get("tool"), **result})
+        if result.get("status") == "failed":
+            break
+
+    return {"status": "completed", "results": results, "execution_log": self_healing_executor.execution_log}
+
+
+# --- Critique Agent ---
+
+class CritiqueRequest(BaseModel):
+    tool: str
+    result: Dict[str, Any]
+    confidence_threshold: float = 0.7
+
+
+@app.post("/ai/critique/validate")
+def ai_critique_validate(request: CritiqueRequest):
+    """Validate a tool result with the critique agent."""
+    from crew.critique_agent import critique_agent
+    return critique_agent.validate(request.tool, request.result, request.confidence_threshold)
+
+
+@app.post("/ai/critique/cross-reference")
+def ai_critique_cross_reference(smiles: str, target: str = None):
+    """Cross-reference a compound against known literature."""
+    from crew.critique_agent import critique_agent
+    return critique_agent.cross_reference(smiles, target)
+
+
+@app.post("/ai/critique/validate-workflow")
+def ai_critique_validate_workflow(workflow: Dict[str, Any]):
+    """Validate a workflow DAG before execution."""
+    from crew.critique_agent import critique_agent
+    return critique_agent.validate_workflow(workflow)
+
+
+# --- Knowledge Graph ---
+
+@app.get("/ai/knowledge-graph/stats")
+def ai_kg_stats():
+    """Get knowledge graph statistics."""
+    from crew.knowledge_graph import knowledge_graph
+    return knowledge_graph.get_stats()
+
+
+@app.get("/ai/knowledge-graph/target/{uniprot_id}")
+def ai_kg_target_context(uniprot_id: str):
+    """Get full context for a target."""
+    from crew.knowledge_graph import knowledge_graph
+    return knowledge_graph.get_target_context(uniprot_id)
+
+
+@app.get("/ai/knowledge-graph/target/{uniprot_id}/similar")
+def ai_kg_similar_targets(uniprot_id: str, n: int = 5):
+    """Find similar targets in the same family."""
+    from crew.knowledge_graph import knowledge_graph
+    return knowledge_graph.find_similar_targets(uniprot_id, n)
+
+
+@app.get("/ai/knowledge-graph/compound")
+def ai_kg_compound_history(smiles: str):
+    """Get compound history."""
+    from crew.knowledge_graph import knowledge_graph
+    return knowledge_graph.get_compound_history(smiles)
+
+
+@app.get("/ai/knowledge-graph/search")
+def ai_kg_search(q: str):
+    """Search the knowledge graph."""
+    from crew.knowledge_graph import knowledge_graph
+    return knowledge_graph.search(q)
+
+
+@app.post("/ai/knowledge-graph/target")
+def ai_kg_add_target(request: Dict[str, Any]):
+    """Add a target to the knowledge graph."""
+    from crew.knowledge_graph import knowledge_graph
+    knowledge_graph.add_target(
+        uniprot_id=request.get("uniprot_id", ""),
+        name=request.get("name", ""),
+        family=request.get("family"),
+        pdb_ids=request.get("pdb_ids"),
+        description=request.get("description"),
+    )
+    return {"status": "added"}
+
+
+@app.post("/ai/knowledge-graph/compound")
+def ai_kg_add_compound(request: Dict[str, Any]):
+    """Add a compound to the knowledge graph."""
+    from crew.knowledge_graph import knowledge_graph
+    knowledge_graph.add_compound(
+        smiles=request.get("smiles", ""),
+        name=request.get("name"),
+        cid=request.get("cid"),
+    )
+    return {"status": "added"}
+
+
+@app.post("/ai/knowledge-graph/link")
+def ai_kg_link(request: Dict[str, Any]):
+    """Link a compound to a target."""
+    from crew.knowledge_graph import knowledge_graph
+    knowledge_graph.link_compound_to_target(
+        smiles=request.get("smiles", ""),
+        uniprot_id=request.get("uniprot_id", ""),
+        activity=request.get("activity"),
+        assay_type=request.get("assay_type"),
+    )
+    return {"status": "linked"}
+
+
+@app.post("/ai/knowledge-graph/experiment")
+def ai_kg_add_experiment(request: Dict[str, Any]):
+    """Record an experiment in the knowledge graph."""
+    from crew.knowledge_graph import knowledge_graph
+    knowledge_graph.add_experiment(
+        exp_id=request.get("exp_id", ""),
+        smiles=request.get("smiles"),
+        target=request.get("target"),
+        result=request.get("result", {}),
+    )
+    return {"status": "recorded"}
+
+
 if __name__ == "__main__":
     import uvicorn
 
