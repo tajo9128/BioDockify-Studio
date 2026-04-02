@@ -8,7 +8,7 @@ export function StatusBar() {
   const [jobs] = useState(0)
   
   useEffect(() => {
-    fetch('/api/gpu/status')
+    fetch('/gpu/status')
       .then(r => r.json())
       .then(d => setGpuStatus(d.available ? 'Available' : 'CPU Only'))
       .catch(() => setGpuStatus('Unknown'))
@@ -29,7 +29,7 @@ export function StatusBar() {
       </div>
       <div className="flex items-center gap-4">
         <span>Jobs: {jobs}</span>
-        <span>v2.4.0</span>
+        <span>v4.2.1</span>
       </div>
     </footer>
   )

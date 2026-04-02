@@ -1,4 +1,12 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Body, BackgroundTasks
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    UploadFile,
+    File,
+    Form,
+    Body,
+    BackgroundTasks,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -60,7 +68,11 @@ app.add_middleware(
 
 # Determine base directory - works whether running from /app or /app/backend
 _BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
-_APP_DIR = os.path.dirname(_BACKEND_DIR) if os.path.basename(_BACKEND_DIR) == "backend" else _BACKEND_DIR
+_APP_DIR = (
+    os.path.dirname(_BACKEND_DIR)
+    if os.path.basename(_BACKEND_DIR) == "backend"
+    else _BACKEND_DIR
+)
 
 STORAGE_DIR = os.path.join(_APP_DIR, "backend", "storage")
 os.makedirs(STORAGE_DIR, exist_ok=True)
@@ -111,7 +123,8 @@ async def upload_page():
 async def startup_event():
     """Print startup information when server starts"""
     import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     print("")
     print("=" * 60)
     print("  BioDockify Studio AI - Backend Started")
@@ -216,67 +229,80 @@ def ollama_status():
 # SYSTEM MONITORING ENDPOINTS - For Nanobot
 # ============================================
 
+
 @app.get("/system/status")
 def system_status():
     """Get comprehensive system status for Nanobot monitoring"""
     try:
         import psutil
         import requests
-        
+
         # CPU and Memory
         cpu_percent = psutil.cpu_percent(interval=0.5)
         memory = psutil.virtual_memory()
-        
+
         # Disk usage
         try:
-            disk = psutil.disk_usage('/')
+            disk = psutil.disk_usage("/")
         except:
             disk = None
-        
+
         # GPU status
         gpu_available = False
         gpu_info = {}
         try:
-            result = subprocess.run(['nvidia-smi', '--query-gpu=name,memory.total,memory.used,temperature.gpu', '--format=csv,noheader'], 
-                                   capture_output=True, timeout=5, text=True)
+            result = subprocess.run(
+                [
+                    "nvidia-smi",
+                    "--query-gpu=name,memory.total,memory.used,temperature.gpu",
+                    "--format=csv,noheader",
+                ],
+                capture_output=True,
+                timeout=5,
+                text=True,
+            )
             if result.returncode == 0:
                 gpu_available = True
-                parts = result.stdout.strip().split(',')
+                parts = result.stdout.strip().split(",")
                 if len(parts) >= 4:
                     gpu_info = {
                         "name": parts[0].strip(),
                         "memory_total": parts[1].strip(),
                         "memory_used": parts[2].strip(),
-                        "temperature": parts[3].strip()
+                        "temperature": parts[3].strip(),
                     }
         except:
             pass
-        
+
         # RDKit availability
         rdkit_available = False
         try:
             from rdkit import Chem
+
             rdkit_available = True
         except:
             pass
-        
+
         # Vina availability
         vina_available = False
         try:
             from vina import Vina
+
             vina_available = True
         except:
             pass
-        
+
         # GNINA availability
         gnina_available = check_gnina()
-        
+
         # Recent jobs from database
         recent_jobs = get_all_jobs(limit=5)
-        completed_jobs = sum(1 for j in recent_jobs if j.get('status') == 'completed')
-        failed_jobs = sum(1 for j in recent_jobs if j.get('status') == 'failed')
-        running_jobs = sum(1 for j in recent_jobs if j.get('status') in ['running', 'pending'])
-        
+        completed_jobs = sum(1 for j in recent_jobs if j.get("status") == "completed")
+        failed_jobs = sum(1 for j in recent_jobs if j.get("status") == "failed")
+        running_jobs = sum(
+            1 for j in recent_jobs if j.get("status") in ["running", "pending"]
+        )
+
         # Check Ollama
         ollama_available = False
         try:
@@ -285,7 +311,7 @@ def system_status():
             ollama_available = response.status_code == 200
         except:
             pass
-        
+
         return {
             "status": "healthy",
             "timestamp": datetime.now().isoformat(),
@@ -298,15 +324,24 @@ def system_status():
                 "disk_used_gb": round(disk.used / (1024**3), 1) if disk else 0,
                 "disk_percent": disk.percent if disk else 0,
             },
-            "gpu": {
-                "available": gpu_available,
-                "info": gpu_info
-            },
+            "gpu": {"available": gpu_available, "info": gpu_info},
             "services": {
-                "rdkit": {"available": rdkit_available, "status": "running" if rdkit_available else "unavailable"},
-                "vina": {"available": vina_available, "status": "running" if vina_available else "unavailable"},
-                "gnina": {"available": gnina_available, "status": "running" if gnina_available else "unavailable"},
-                "ollama": {"available": ollama_available, "status": "running" if ollama_available else "unavailable"},
+                "rdkit": {
+                    "available": rdkit_available,
+                    "status": "running" if rdkit_available else "unavailable",
+                },
+                "vina": {
+                    "available": vina_available,
+                    "status": "running" if vina_available else "unavailable",
+                },
+                "gnina": {
+                    "available": gnina_available,
+                    "status": "running" if gnina_available else "unavailable",
+                },
+                "ollama": {
+                    "available": ollama_available,
+                    "status": "running" if ollama_available else "unavailable",
+                },
             },
             "jobs": {
                 "total": len(recent_jobs),
@@ -318,11 +353,11 @@ def system_status():
                         "job_name": j.get("job_name", "Unknown"),
                         "status": j.get("status"),
                         "binding_energy": j.get("binding_energy"),
-                        "created_at": j.get("created_at")
+                        "created_at": j.get("created_at"),
                     }
                     for j in recent_jobs[:5]
-                ]
-            }
+                ],
+            },
         }
     except ImportError:
         # Fallback if psutil not available
@@ -336,10 +371,7 @@ def system_status():
                 "gnina": {"available": False, "status": "checking"},
                 "ollama": {"available": False, "status": "checking"},
             },
-            "jobs": {
-                "total": len(recent_jobs),
-                "recent": []
-            }
+            "jobs": {"total": len(recent_jobs), "recent": []},
         }
     except Exception as e:
         logger.error(f"System status error: {e}")
@@ -353,40 +385,38 @@ def system_logs(limit: int = 50):
     try:
         log_file = os.path.join(STORAGE_DIR, "docking.log")
         if os.path.exists(log_file):
-            with open(log_file, 'r') as f:
+            with open(log_file, "r") as f:
                 lines = f.readlines()
                 logs = [l.strip() for l in lines[-limit:] if l.strip()]
     except:
         pass
-    
-    return {
-        "logs": logs,
-        "count": len(logs),
-        "source": "docking.log"
-    }
+
+    return {"logs": logs, "count": len(logs), "source": "docking.log"}
 
 
 @app.get("/system/errors")
 def system_errors():
     """Get recent errors and failures for Nanobot to analyze"""
     recent_jobs = get_all_jobs(limit=20)
-    failed_jobs = [j for j in recent_jobs if j.get('status') == 'failed']
-    
+    failed_jobs = [j for j in recent_jobs if j.get("status") == "failed"]
+
     errors = []
     for job in failed_jobs:
-        errors.append({
-            "job_id": job.get("job_uuid"),
-            "job_name": job.get("job_name"),
-            "status": job.get("status"),
-            "engine": job.get("engine"),
-            "created_at": job.get("created_at"),
-            "error_type": "docking_failed"
-        })
-    
+        errors.append(
+            {
+                "job_id": job.get("job_uuid"),
+                "job_name": job.get("job_name"),
+                "status": job.get("status"),
+                "engine": job.get("engine"),
+                "created_at": job.get("created_at"),
+                "error_type": "docking_failed",
+            }
+        )
+
     return {
         "errors": errors,
         "count": len(errors),
-        "summary": f"{len(errors)} failed jobs in recent history"
+        "summary": f"{len(errors)} failed jobs in recent history",
     }
 
 
@@ -396,22 +426,24 @@ def report_issue(req: Dict[str, Any]):
     issue_type = req.get("type", "general")
     description = req.get("description", "")
     context = req.get("context", {})
-    
+
     # Log the issue
-    logger.warning(f"[ISSUE REPORT] Type: {issue_type}, Description: {description}, Context: {context}")
-    
+    logger.warning(
+        f"[ISSUE REPORT] Type: {issue_type}, Description: {description}, Context: {context}"
+    )
+
     # Store in database for Nanobot to access
     issue_log = {
         "type": issue_type,
         "description": description,
         "context": context,
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
     }
-    
+
     return {
         "status": "reported",
         "issue": issue_log,
-        "message": "Issue reported to Nanobot. I'm monitoring the system and will help diagnose the problem."
+        "message": "Issue reported to Nanobot. I'm monitoring the system and will help diagnose the problem.",
     }
 
 
@@ -419,124 +451,153 @@ def report_issue(req: Dict[str, Any]):
 def system_diagnostics():
     """Run diagnostic checks and return results for Nanobot"""
     diagnostics = []
-    
+
     # Check RDKit
     try:
         from rdkit import Chem
         from rdkit.Chem import Descriptors
+
         test_mol = Chem.MolFromSmiles("CC")
         mw = Descriptors.MolWt(test_mol)
-        diagnostics.append({
-            "check": "rdkit", "status": "pass", 
-            "details": f"RDKit working, test MW: {mw}"
-        })
+        diagnostics.append(
+            {
+                "check": "rdkit",
+                "status": "pass",
+                "details": f"RDKit working, test MW: {mw}",
+            }
+        )
     except Exception as e:
-        diagnostics.append({
-            "check": "rdkit", "status": "fail", 
-            "details": f"RDKit error: {str(e)}"
-        })
-    
+        diagnostics.append(
+            {"check": "rdkit", "status": "fail", "details": f"RDKit error: {str(e)}"}
+        )
+
     # Check Vina
     try:
         from vina import Vina
-        diagnostics.append({
-            "check": "vina", "status": "pass", 
-            "details": "AutoDock Vina Python API available"
-        })
+
+        diagnostics.append(
+            {
+                "check": "vina",
+                "status": "pass",
+                "details": "AutoDock Vina Python API available",
+            }
+        )
     except:
         try:
-            result = subprocess.run(['vina', '--version'], capture_output=True, timeout=5, text=True)
+            result = subprocess.run(
+                ["vina", "--version"], capture_output=True, timeout=5, text=True
+            )
             if result.returncode == 0:
-                diagnostics.append({
-                    "check": "vina", "status": "pass", 
-                    "details": f"Vina CLI: {result.stdout.strip()}"
-                })
+                diagnostics.append(
+                    {
+                        "check": "vina",
+                        "status": "pass",
+                        "details": f"Vina CLI: {result.stdout.strip()}",
+                    }
+                )
             else:
-                diagnostics.append({
-                    "check": "vina", "status": "fail", 
-                    "details": "Vina CLI not found"
-                })
+                diagnostics.append(
+                    {"check": "vina", "status": "fail", "details": "Vina CLI not found"}
+                )
         except:
-            diagnostics.append({
-                "check": "vina", "status": "fail", 
-                "details": "Vina not available (pip or CLI)"
-            })
-    
+            diagnostics.append(
+                {
+                    "check": "vina",
+                    "status": "fail",
+                    "details": "Vina not available (pip or CLI)",
+                }
+            )
+
     # Check GPU
     try:
-        result = subprocess.run(['nvidia-smi'], capture_output=True, timeout=5)
+        result = subprocess.run(["nvidia-smi"], capture_output=True, timeout=5)
         if result.returncode == 0:
-            diagnostics.append({
-                "check": "gpu", "status": "pass", 
-                "details": "NVIDIA GPU detected"
-            })
+            diagnostics.append(
+                {"check": "gpu", "status": "pass", "details": "NVIDIA GPU detected"}
+            )
         else:
-            diagnostics.append({
-                "check": "gpu", "status": "fail", 
-                "details": "GPU not available"
-            })
+            diagnostics.append(
+                {"check": "gpu", "status": "fail", "details": "GPU not available"}
+            )
     except:
-        diagnostics.append({
-            "check": "gpu", "status": "skip", 
-            "details": "nvidia-smi not found"
-        })
-    
+        diagnostics.append(
+            {"check": "gpu", "status": "skip", "details": "nvidia-smi not found"}
+        )
+
     # Check Ollama
     try:
         import requests
+
         ollama_url = os.environ.get("OLLAMA_URL", "http://localhost:11434")
         response = requests.get(f"{ollama_url}/api/tags", timeout=5)
         if response.status_code == 200:
             models = response.json().get("models", [])
-            diagnostics.append({
-                "check": "ollama", "status": "pass", 
-                "details": f"Ollama running with {len(models)} models"
-            })
+            diagnostics.append(
+                {
+                    "check": "ollama",
+                    "status": "pass",
+                    "details": f"Ollama running with {len(models)} models",
+                }
+            )
         else:
-            diagnostics.append({
-                "check": "ollama", "status": "fail", 
-                "details": f"Ollama returned status {response.status_code}"
-            })
+            diagnostics.append(
+                {
+                    "check": "ollama",
+                    "status": "fail",
+                    "details": f"Ollama returned status {response.status_code}",
+                }
+            )
     except Exception as e:
-        diagnostics.append({
-            "check": "ollama", "status": "fail", 
-            "details": f"Ollama error: {str(e)}"
-        })
-    
+        diagnostics.append(
+            {"check": "ollama", "status": "fail", "details": f"Ollama error: {str(e)}"}
+        )
+
     # Check database
     try:
         jobs = get_all_jobs(limit=1)
-        diagnostics.append({
-            "check": "database", "status": "pass", 
-            "details": "SQLite database accessible"
-        })
+        diagnostics.append(
+            {
+                "check": "database",
+                "status": "pass",
+                "details": "SQLite database accessible",
+            }
+        )
     except Exception as e:
-        diagnostics.append({
-            "check": "database", "status": "fail", 
-            "details": f"Database error: {str(e)}"
-        })
-    
+        diagnostics.append(
+            {
+                "check": "database",
+                "status": "fail",
+                "details": f"Database error: {str(e)}",
+            }
+        )
+
     # Check storage
     try:
         os.makedirs(STORAGE_DIR, exist_ok=True)
         test_file = os.path.join(STORAGE_DIR, ".test")
-        with open(test_file, 'w') as f:
+        with open(test_file, "w") as f:
             f.write("test")
         os.remove(test_file)
-        diagnostics.append({
-            "check": "storage", "status": "pass", 
-            "details": f"Storage writable at {STORAGE_DIR}"
-        })
+        diagnostics.append(
+            {
+                "check": "storage",
+                "status": "pass",
+                "details": f"Storage writable at {STORAGE_DIR}",
+            }
+        )
     except Exception as e:
-        diagnostics.append({
-            "check": "storage", "status": "fail", 
-            "details": f"Storage error: {str(e)}"
-        })
-    
+        diagnostics.append(
+            {
+                "check": "storage",
+                "status": "fail",
+                "details": f"Storage error: {str(e)}",
+            }
+        )
+
     passed = sum(1 for d in diagnostics if d["status"] == "pass")
     failed = sum(1 for d in diagnostics if d["status"] == "fail")
     skipped = sum(1 for d in diagnostics if d["status"] == "skip")
-    
+
     return {
         "diagnostics": diagnostics,
         "summary": {
@@ -544,8 +605,12 @@ def system_diagnostics():
             "passed": passed,
             "failed": failed,
             "skipped": skipped,
-            "health": "good" if failed == 0 else "degraded" if failed <= 2 else "critical"
-        }
+            "health": "good"
+            if failed == 0
+            else "degraded"
+            if failed <= 2
+            else "critical",
+        },
     }
 
 
@@ -686,7 +751,16 @@ def list_results(job_uuid: str):
     results = get_docking_results(job_uuid)
     mapped = []
     for r in results:
-        item = dict(r) if isinstance(r, dict) else {"mode": r.pose_id if hasattr(r, 'pose_id') else 1, "vina_score": None, "gnina_score": None, "rf_score": None}
+        item = (
+            dict(r)
+            if isinstance(r, dict)
+            else {
+                "mode": r.pose_id if hasattr(r, "pose_id") else 1,
+                "vina_score": None,
+                "gnina_score": None,
+                "rf_score": None,
+            }
+        )
         if "pose_id" in item and "mode" not in item:
             item["mode"] = item["pose_id"]
         mapped.append(item)
@@ -734,7 +808,7 @@ async def upload_file(file: UploadFile = File(...)):
     """Upload a file"""
     # Sanitize filename to prevent path traversal attacks
     original_filename = file.filename or "unnamed_file"
-    safe_filename = re.sub(r'[^a-zA-Z0-9._-]', '_', original_filename)
+    safe_filename = re.sub(r"[^a-zA-Z0-9._-]", "_", original_filename)
     file_path = os.path.join(STORAGE_DIR, safe_filename)
 
     # Handle duplicate filenames
@@ -871,7 +945,12 @@ def chat_status():
         return status
     except Exception as e:
         logger.error(f"Chat status failed: {e}")
-        return {"provider": "offline", "ollama_available": False, "available": False, "error": str(e)}
+        return {
+            "provider": "offline",
+            "ollama_available": False,
+            "available": False,
+            "error": str(e),
+        }
 
 
 class DockingRunRequest(BaseModel):
@@ -897,55 +976,65 @@ def api_docking_run(req: DockingRunRequest):
     """API endpoint for running docking with proper preparation pipeline"""
     logger.info(f"API docking run: scoring={req.scoring}")
     job_id = f"dock_{uuid.uuid4().hex[:8]}"
-    
+
     job_name = f"docking_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    
+
     try:
-        create_job(job_uuid=job_id, job_name=job_name, receptor_file="", 
-                   ligand_file="", engine=req.scoring)
+        create_job(
+            job_uuid=job_id,
+            job_name=job_name,
+            receptor_file="",
+            ligand_file="",
+            engine=req.scoring,
+        )
         update_job_status(job_id, "running")
     except Exception as e:
         logger.error(f"Failed to save job to database: {e}")
-    
+
     os.makedirs(STORAGE_DIR, exist_ok=True)
-    
+
     try:
         from docking_engine import (
-            smart_dock, prepare_protein_from_content, 
-            prepare_ligand_from_content, smiles_to_3d,
-            check_gpu_cuda, check_vina
+            smart_dock,
+            prepare_protein_from_content,
+            prepare_ligand_from_content,
+            smiles_to_3d,
+            check_gpu_cuda,
+            check_vina,
         )
-        
+
         gpu_info = check_gpu_cuda()
         vina_available = check_vina()
-        
+
         logger.info(f"[Docking] GPU: {gpu_info['available']}, Vina: {vina_available}")
-        
+
         receptor_content = None
         ligand_content = None
-        input_format = 'sdf'
-        
+        input_format = "sdf"
+
         if req.receptor_content:
             receptor_content = req.receptor_content
             logger.info(f"[Docking] Protein provided: {len(receptor_content)} chars")
-        
+
         if req.smiles:
             logger.info(f"[Docking] SMILES input: {req.smiles[:50]}...")
             result = smiles_to_3d(req.smiles)
             if result:
-                ligand_content = result['pdb']
-                input_format = 'pdb'
-                logger.info(f"[Docking] SMILES converted to 3D: {result['num_atoms']} atoms")
+                ligand_content = result["pdb"]
+                input_format = "pdb"
+                logger.info(
+                    f"[Docking] SMILES converted to 3D: {result['num_atoms']} atoms"
+                )
             else:
                 return {"job_id": job_id, "status": "failed", "error": "Invalid SMILES"}
-                
+
         elif req.ligand_content:
             ligand_content = req.ligand_content
             logger.info(f"[Docking] Ligand provided: {len(ligand_content)} chars")
-        
+
         if not ligand_content:
             return {"job_id": job_id, "status": "failed", "error": "No ligand provided"}
-        
+
         docking_result = smart_dock(
             receptor_content=receptor_content,
             ligand_content=ligand_content,
@@ -960,14 +1049,18 @@ def api_docking_run(req: DockingRunRequest):
             num_modes=req.num_modes,
             output_dir=STORAGE_DIR,
             enable_flexibility=req.enable_flexibility,
-            constraints=req.constraints
+            constraints=req.constraints,
         )
-        
-        logger.info(f"[Docking] Pipeline stages: {[s['stage'] for s in docking_result.get('pipeline_stages', [])]}")
-        
+
+        logger.info(
+            f"[Docking] Pipeline stages: {[s['stage'] for s in docking_result.get('pipeline_stages', [])]}"
+        )
+
         results = docking_result.get("results", [])
-        best_score = docking_result.get("best_score") or (results[0]['vina_score'] if results else 0)
-        
+        best_score = docking_result.get("best_score") or (
+            results[0]["vina_score"] if results else 0
+        )
+
         logger.info(f"[Docking] Saving {len(results)} results for job {job_id}")
         saved_count = 0
         for r in results:
@@ -978,19 +1071,21 @@ def api_docking_run(req: DockingRunRequest):
                     "ligand",
                     vina_score=r.get("vina_score"),
                     gnina_score=r.get("gnina_score"),
-                    rf_score=r.get("rf_score")
+                    rf_score=r.get("rf_score"),
                 )
                 if success:
                     saved_count += 1
                 else:
-                    logger.error(f"add_docking_result returned False for mode {r.get('mode')}")
+                    logger.error(
+                        f"add_docking_result returned False for mode {r.get('mode')}"
+                    )
             except Exception as e:
                 logger.error(f"Failed to save result: {e}")
-        
+
         logger.info(f"[Docking] Saved {saved_count}/{len(results)} results to database")
-        
+
         update_job_status(job_id, "completed", best_score)
-        
+
         return {
             "job_id": job_id,
             "status": "completed",
@@ -1002,19 +1097,30 @@ def api_docking_run(req: DockingRunRequest):
             "results": results,
             "scoring_breakdown": {
                 "method": "composite",
-                "terms": ["vina_score", "hydrophobic_term", "rotatable_penalty", "lipo_contact"],
-                "formula": "composite_score = vina_score + hydrophobic_term + rotatable_penalty + lipo_contact"
-            } if results and "composite_score" in results[0] else None,
+                "terms": [
+                    "vina_score",
+                    "hydrophobic_term",
+                    "rotatable_penalty",
+                    "lipo_contact",
+                ],
+                "formula": "composite_score = vina_score + hydrophobic_term + rotatable_penalty + lipo_contact",
+            }
+            if results and "composite_score" in results[0]
+            else None,
             "files": docking_result.get("files", {}),
             "download_urls": docking_result.get("download_urls", {}),
             "receptor_file": docking_result.get("files", {}).get("receptor", None),
             "ligand_file": docking_result.get("files", {}).get("ligand", None),
-            "message": f"Docking complete - {len(results)} poses generated"
+            "message": f"Docking complete - {len(results)} poses generated",
         }
-        
+
     except ImportError as e:
         logger.error(f"[Docking] Import error: {e}")
-        return {"job_id": job_id, "status": "failed", "error": f"Import error: {str(e)}"}
+        return {
+            "job_id": job_id,
+            "status": "failed",
+            "error": f"Import error: {str(e)}",
+        }
     except Exception as e:
         logger.error(f"[Docking] Error: {e}")
         return {"job_id": job_id, "status": "failed", "error": str(e)}
@@ -1026,36 +1132,42 @@ def api_chem_dock(req: Dict[str, Any]):
     smiles = req.get("smiles", "")
     job_id = f"chem_{uuid.uuid4().hex[:8]}"
     logger.info(f"Chem dock request: {smiles[:30]}...")
-    
+
     try:
         from rdkit import Chem
         from rdkit.Chem import AllChem, Descriptors, Lipinski, Crippen, rdMolDescriptors
-        
+
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
             return {"error": "Invalid SMILES"}
-        
+
         mol_3d = Chem.AddHs(mol)
         AllChem.EmbedMolecule(mol_3d, randomSeed=42)
         AllChem.MMFFOptimizeMolecule(mol_3d)
-        
-        safe_id = job_id.replace('-', '_')
+
+        safe_id = job_id.replace("-", "_")
         pdb_dir = os.path.join(STORAGE_DIR, safe_id)
         os.makedirs(pdb_dir, exist_ok=True)
         pdb_path = os.path.join(pdb_dir, "ligand.pdb")
-        with open(pdb_path, 'w') as f:
+        with open(pdb_path, "w") as f:
             f.write(Chem.MolToPDBBlock(mol_3d))
-        
+
         vina_score = round(-5.0 - (hash(smiles) % 100) / 20, 2)
-        
+
         return {
-            "job_id": job_id, "status": "created", "score": vina_score,
+            "job_id": job_id,
+            "status": "created",
+            "score": vina_score,
             "message": "Molecule prepared for docking",
-            "pdb_path": pdb_path
+            "pdb_path": pdb_path,
         }
     except ImportError:
-        return {"job_id": job_id, "status": "created_no_rdkit", "score": -7.5,
-                "message": "RDKit not available - job created without 3D structure"}
+        return {
+            "job_id": job_id,
+            "status": "created_no_rdkit",
+            "score": -7.5,
+            "message": "RDKit not available - job created without 3D structure",
+        }
     except Exception as e:
         return {"error": str(e)}
 
@@ -1065,15 +1177,15 @@ def api_chem_properties(req: Dict[str, Any]):
     """Calculate molecular properties"""
     smiles = req.get("smiles", "")
     logger.info(f"Properties request: {smiles[:30]}...")
-    
+
     try:
         from rdkit import Chem
         from rdkit.Chem import Descriptors, Lipinski, Crippen, rdMolDescriptors
-        
+
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
             return {"valid": False, "error": "Invalid SMILES"}
-        
+
         mw = Descriptors.MolWt(mol)
         logp = Crippen.MolLogP(mol)
         hbd = Lipinski.NumHDonors(mol)
@@ -1083,18 +1195,27 @@ def api_chem_properties(req: Dict[str, Any]):
         aromatic = rdMolDescriptors.CalcNumAromaticRings(mol)
         atoms = mol.GetNumAtoms()
         bonds = mol.GetNumBonds()
-        
+
         formula = ""
         for a in sorted(mol.GetAtoms(), key=lambda x: -x.GetAtomicNum()):
-            count = sum(1 for x in mol.GetAtoms() if x.GetAtomicNum() == a.GetAtomicNum())
+            count = sum(
+                1 for x in mol.GetAtoms() if x.GetAtomicNum() == a.GetAtomicNum()
+            )
             symbol = a.GetSymbol()
             formula += symbol + (str(count) if count > 1 else "")
-        
+
         return {
-            "valid": True, "mw": round(mw, 3), "logp": round(logp, 3),
-            "hbd": hbd, "hba": hba, "tpsa": round(tpsa, 2),
-            "rotatable_bonds": rotatable, "aromatic_rings": aromatic,
-            "atom_count": atoms, "bond_count": bonds, "formula": formula
+            "valid": True,
+            "mw": round(mw, 3),
+            "logp": round(logp, 3),
+            "hbd": hbd,
+            "hba": hba,
+            "tpsa": round(tpsa, 2),
+            "rotatable_bonds": rotatable,
+            "aromatic_rings": aromatic,
+            "atom_count": atoms,
+            "bond_count": bonds,
+            "formula": formula,
         }
     except ImportError:
         return {"valid": False, "error": "RDKit not available", "fallback": True}
@@ -1107,15 +1228,15 @@ def api_chem_extract_smiles(req: Dict[str, Any]):
     """Extract SMILES from SDF, MOL2, or PDB file"""
     content = req.get("content", "")
     file_format = req.get("format", "sdf")
-    
+
     if not content:
         return {"smiles": None, "error": "No content provided"}
-    
+
     try:
         from rdkit import Chem
-        
+
         mol = None
-        
+
         if file_format == "sdf":
             suppl = Chem.SDMolSupplier()
             suppl.SetData(content)
@@ -1127,20 +1248,23 @@ def api_chem_extract_smiles(req: Dict[str, Any]):
             mol = Chem.MolFromMol2Block(content)
         elif file_format == "pdb":
             mol = Chem.MolFromPDBBlock(content)
-        
+
         if mol is None:
-            return {"smiles": None, "error": f"Failed to parse {file_format.upper()} file"}
-        
+            return {
+                "smiles": None,
+                "error": f"Failed to parse {file_format.upper()} file",
+            }
+
         # Get SMILES
         canonical_smiles = Chem.MolToSmiles(mol)
-        
+
         return {
             "smiles": canonical_smiles,
-            "mol_name": content.split('\n')[0].strip()[:50] if content else "Unknown",
+            "mol_name": content.split("\n")[0].strip()[:50] if content else "Unknown",
             "num_atoms": mol.GetNumAtoms(),
-            "num_heavy": mol.GetNumHeavyAtoms()
+            "num_heavy": mol.GetNumHeavyAtoms(),
         }
-        
+
     except ImportError:
         return {"smiles": None, "error": "RDKit not available"}
     except Exception as e:
@@ -1151,15 +1275,15 @@ def api_chem_extract_smiles(req: Dict[str, Any]):
 def api_chem_suggestions(req: Dict[str, Any]):
     """Generate drug-likeness suggestions"""
     smiles = req.get("smiles", "")
-    
+
     try:
         from rdkit import Chem
         from rdkit.Chem import Descriptors, Lipinski, Crippen, rdMolDescriptors
-        
+
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
             return {"suggestions": ["Invalid SMILES string"], "smiles": smiles}
-        
+
         mw = Descriptors.MolWt(mol)
         logp = Crippen.MolLogP(mol)
         hbd = Lipinski.NumHDonors(mol)
@@ -1167,56 +1291,71 @@ def api_chem_suggestions(req: Dict[str, Any]):
         rotatable = rdMolDescriptors.CalcNumRotatableBonds(mol)
         tpsa = rdMolDescriptors.CalcTPSA(mol)
         aromatic = rdMolDescriptors.CalcNumAromaticRings(mol)
-        
+
         suggestions = []
         violations = 0
-        
+
         if mw >= 500:
-            suggestions.append(f"⚠️ High MW ({mw:.1f} Da) - may have poor oral absorption")
+            suggestions.append(
+                f"⚠️ High MW ({mw:.1f} Da) - may have poor oral absorption"
+            )
             violations += 1
         else:
             suggestions.append(f"✓ MW is within Lipinski range ({mw:.1f} Da)")
-        
+
         if logp >= 5:
             suggestions.append(f"⚠️ High LogP ({logp:.2f}) - may have poor solubility")
             violations += 1
         else:
             suggestions.append(f"✓ LogP is acceptable ({logp:.2f})")
-        
+
         if hbd > 5:
-            suggestions.append(f"⚠️ High HBD ({hbd}) - may have poor membrane permeability")
+            suggestions.append(
+                f"⚠️ High HBD ({hbd}) - may have poor membrane permeability"
+            )
             violations += 1
         else:
             suggestions.append(f"✓ HBD is acceptable ({hbd})")
-        
+
         if hba > 10:
             suggestions.append(f"⚠️ High HBA ({hba}) - may have poor absorption")
             violations += 1
         else:
             suggestions.append(f"✓ HBA is acceptable ({hba})")
-        
+
         if rotatable > 10:
             suggestions.append(f"⚠️ High flexibility ({rotatable} rotatable bonds)")
         else:
-            suggestions.append(f"✓ Acceptable flexibility ({rotatable} rotatable bonds)")
-        
+            suggestions.append(
+                f"✓ Acceptable flexibility ({rotatable} rotatable bonds)"
+            )
+
         if tpsa >= 140:
-            suggestions.append(f"⚠️ High TPSA ({tpsa:.1f} Å²) - may have poor absorption")
+            suggestions.append(
+                f"⚠️ High TPSA ({tpsa:.1f} Å²) - may have poor absorption"
+            )
         else:
             suggestions.append(f"✓ TPSA is acceptable ({tpsa:.1f} Å²)")
-        
+
         if violations == 0:
             suggestions.append("🟢 Drug-like: Passes Lipinski Rule of 5")
         elif violations == 1:
-            suggestions.append(f"🟡 Moderately drug-like: {violations} Lipinski violation")
+            suggestions.append(
+                f"🟡 Moderately drug-like: {violations} Lipinski violation"
+            )
         else:
             suggestions.append(f"🔴 Poor drug-like: {violations} Lipinski violations")
-        
-        suggestions.append(f"📊 {aromatic} aromatic ring(s), {rotatable} rotatable bond(s)")
-        
+
+        suggestions.append(
+            f"📊 {aromatic} aromatic ring(s), {rotatable} rotatable bond(s)"
+        )
+
         return {"suggestions": suggestions, "smiles": smiles, "violations": violations}
     except ImportError:
-        return {"suggestions": ["RDKit not available - cannot analyze structure"], "smiles": smiles}
+        return {
+            "suggestions": ["RDKit not available - cannot analyze structure"],
+            "smiles": smiles,
+        }
     except Exception as e:
         return {"suggestions": [f"Error: {str(e)}"], "smiles": smiles}
 
@@ -1224,14 +1363,14 @@ def api_chem_suggestions(req: Dict[str, Any]):
 @app.get("/api/chem/3d/{job_id}")
 def api_chem_3d(job_id: str):
     """Get 3D structure for a job"""
-    safe_id = job_id.replace('-', '_')
+    safe_id = job_id.replace("-", "_")
     pdb_dir = os.path.join(STORAGE_DIR, safe_id)
     pdb_path = os.path.join(pdb_dir, "ligand.pdb")
-    
+
     if os.path.exists(pdb_path):
         with open(pdb_path) as f:
             return {"pdb": f.read(), "job_id": job_id, "sample": False}
-    
+
     sample_pdb = """ATOM      1  C1  MOL A   1       1.200   0.000   0.000  1.00  0.00           C
 ATOM      2  C2  MOL A   1      -0.600   1.039   0.000  1.00  0.00           C
 ATOM      3  C3  MOL A   1      -0.600  -1.039   0.000  1.00  0.00           C
@@ -1276,9 +1415,9 @@ def api_chem_iupac(req: Dict[str, Any]):
     smiles = req.get("smiles", "")
     try:
         import requests as http_req
+
         resp = http_req.get(
-            f"https://opsin.ch.cam.ac.uk/opsin/{smiles}?format=json",
-            timeout=5
+            f"https://opsin.ch.cam.ac.uk/opsin/{smiles}?format=json", timeout=5
         )
         if resp.status_code == 200:
             data = resp.json()
@@ -1294,6 +1433,7 @@ def api_chem_inchi(req: Dict[str, Any]):
     smiles = req.get("smiles", "")
     try:
         from rdkit import Chem
+
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
             return {"error": "Invalid SMILES"}
@@ -1337,7 +1477,7 @@ def api_chem_conformers(req: Dict[str, Any]):
             "n_conformers": n,
             "energies": energies,
             "best_conf": best_conf,
-            "pdb": pdb
+            "pdb": pdb,
         }
     except Exception as e:
         return {"error": str(e)}
@@ -1416,7 +1556,7 @@ def api_chem_docking_prep(req: Dict[str, Any]):
             "charge": charge,
             "n_atoms": n_atoms,
             "n_rotatable": n_rot,
-            "ready_for_docking": True
+            "ready_for_docking": True,
         }
     except Exception as e:
         return {"error": str(e)}
@@ -1428,8 +1568,10 @@ def api_stats():
     all_jobs = get_all_jobs(1000)
     return {
         "total_jobs": len(all_jobs),
-        "completed_jobs": sum(1 for j in all_jobs if j.get('status') == 'completed'),
-        "active_jobs": sum(1 for j in all_jobs if j.get('status') in ['running', 'pending'])
+        "completed_jobs": sum(1 for j in all_jobs if j.get("status") == "completed"),
+        "active_jobs": sum(
+            1 for j in all_jobs if j.get("status") in ["running", "pending"]
+        ),
     }
 
 
@@ -1438,22 +1580,30 @@ def api_md_gpu_info():
     """Get GPU info for MD"""
     try:
         import subprocess
+
         result = subprocess.run(["nvidia-smi"], capture_output=True, timeout=5)
         cuda_available = result.returncode == 0
     except Exception:
         cuda_available = False
-    
+
     try:
         import subprocess
-        result = subprocess.run(["nvidia-smi", "--query-gpu=platform.name", "--format=csv,noheader"], capture_output=True, timeout=5)
+
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=platform.name", "--format=csv,noheader"],
+            capture_output=True,
+            timeout=5,
+        )
         opencl_available = result.returncode == 0
     except Exception:
         opencl_available = False
-    
+
     return {
-        "platform": "CUDA" if cuda_available else ("OpenCL" if opencl_available else "CPU"),
+        "platform": "CUDA"
+        if cuda_available
+        else ("OpenCL" if opencl_available else "CPU"),
         "cuda_available": cuda_available,
-        "opencl_available": opencl_available
+        "opencl_available": opencl_available,
     }
 
 
@@ -1481,7 +1631,15 @@ class DockingProgress:
                 cls._jobs[job_id]["message"] = message
 
     @classmethod
-    def set_status(cls, job_id: str, status: str, message: str = "", results: Any = None, files: Any = None, download_urls: Any = None):
+    def set_status(
+        cls,
+        job_id: str,
+        status: str,
+        message: str = "",
+        results: Any = None,
+        files: Any = None,
+        download_urls: Any = None,
+    ):
         with cls._lock:
             if job_id in cls._jobs:
                 cls._jobs[job_id]["status"] = status
@@ -1522,10 +1680,12 @@ def start_docking_job(
     size_z: float = Form(20),
     exhaustiveness: int = Form(8),
     num_modes: int = Form(9),
-    engine: str = Form("vina")
+    engine: str = Form("vina"),
 ):
     """Start a real docking job using Vina or GNINA"""
-    logger.info(f"Starting docking job: {job_id} with {total_ligands} ligands using {engine}")
+    logger.info(
+        f"Starting docking job: {job_id} with {total_ligands} ligands using {engine}"
+    )
     DockingProgress.start_job(job_id, total_ligands)
     DockingProgress.update_progress(job_id, 0, "Initializing docking engine...")
 
@@ -1533,24 +1693,26 @@ def start_docking_job(
         """Run actual molecular docking with Vina"""
         try:
             from docking_engine import run_docking, check_vina
-            
+
             # Check available engines
             vina_available = check_vina()
             docking_engine = "vina"  # Use local variable
-            
+
             logger.info(f"Engine check - Vina: {vina_available}")
-            
+
             if not vina_available:
                 DockingProgress.set_status(job_id, "failed", "Vina not available")
                 return
-            
+
             # Progress callback simulation (since actual docking doesn't provide progress)
             DockingProgress.update_progress(job_id, 10, "Preparing receptor...")
-            
+
             # Run docking
-            DockingProgress.update_progress(job_id, 30, f"Running {docking_engine.upper()} docking...")
+            DockingProgress.update_progress(
+                job_id, 30, f"Running {docking_engine.upper()} docking..."
+            )
             logger.info(f"Running docking with engine: {docking_engine}")
-            
+
             result = run_docking(
                 receptor_path=receptor_path,
                 ligand_path=ligand_path,
@@ -1563,11 +1725,11 @@ def start_docking_job(
                 size_z=size_z,
                 exhaustiveness=exhaustiveness,
                 num_modes=num_modes,
-                output_dir=STORAGE_DIR
+                output_dir=STORAGE_DIR,
             )
-            
+
             DockingProgress.update_progress(job_id, 90, "Processing results...")
-            
+
             if result["success"]:
                 DockingProgress.set_status(
                     job_id,
@@ -1575,13 +1737,19 @@ def start_docking_job(
                     f"Docking complete! {len(result['results'])} poses generated",
                     results=result.get("results", []),
                     files=result.get("files", {}),
-                    download_urls=result.get("download_urls", {})
+                    download_urls=result.get("download_urls", {}),
                 )
-                logger.info(f"Docking job completed: {job_id}, poses: {len(result['results'])}")
+                logger.info(
+                    f"Docking job completed: {job_id}, poses: {len(result['results'])}"
+                )
             else:
-                DockingProgress.set_status(job_id, "failed", result.get("error", "Unknown error"))
-                logger.error(f"Docking job failed: {job_id}, error: {result.get('error')}")
-                
+                DockingProgress.set_status(
+                    job_id, "failed", result.get("error", "Unknown error")
+                )
+                logger.error(
+                    f"Docking job failed: {job_id}, error: {result.get('error')}"
+                )
+
         except Exception as e:
             DockingProgress.set_status(job_id, "failed", str(e))
             logger.error(f"Docking job exception: {job_id}, error: {e}")
@@ -1638,62 +1806,79 @@ def get_docking_status(job_id: str):
 
 @app.get("/gpu/status")
 def get_gpu_status():
-    """Get GPU status using nvidia-smi"""
-    try:
-        import subprocess
+    """Get GPU status using nvidia-smi (cross-platform: Linux, macOS, Windows)"""
+    import subprocess
+    import shutil
+    import platform as _platform
 
-        result = subprocess.run(
-            [
-                "nvidia-smi",
-                "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu",
-                "--format=csv,noheader,nounits",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            lines = result.stdout.strip().split("\n")
-            gpus = []
-            for line in lines:
-                parts = [p.strip() for p in line.split(",")]
-                if len(parts) >= 6:
-                    gpus.append(
-                        {
-                            "index": int(parts[0]),
-                            "name": parts[1],
-                            "utilization": int(parts[2]),
-                            "memory_used": int(parts[3]),
-                            "memory_total": int(parts[4]),
-                            "temperature": int(parts[5]),
-                        }
-                    )
-            return {
-                "available": True, 
-                "gpus": gpus,
-                "recommended_pipeline": "vina_gpu",
-                "vina_available": check_vina(),
-                "gnina_available": check_gnina(),
-                "note": "GPU detected - AutoDock Vina GPU will be used for fast docking"
-            }
-    except FileNotFoundError:
-        pass
-    except Exception as e:
-        logger.warning(f"GPU detection error: {e}")
+    nvidia_smi_cmd = shutil.which("nvidia-smi")
+    if not nvidia_smi_cmd and _platform.system() == "Windows":
+        for candidate in [
+            r"C:\Windows\System32\nvidia-smi.exe",
+            r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe",
+            r"C:\Program Files\NVIDIA Corporation\nvidia-smi.exe",
+        ]:
+            if os.path.isfile(candidate):
+                nvidia_smi_cmd = candidate
+                break
+
+    if nvidia_smi_cmd:
+        try:
+            result = subprocess.run(
+                [
+                    nvidia_smi_cmd,
+                    "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu",
+                    "--format=csv,noheader,nounits",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                lines = result.stdout.strip().split("\n")
+                gpus = []
+                for line in lines:
+                    parts = [p.strip() for p in line.split(",")]
+                    if len(parts) >= 6:
+                        gpus.append(
+                            {
+                                "index": int(parts[0]),
+                                "name": parts[1],
+                                "utilization": int(parts[2]),
+                                "memory_used": int(parts[3]),
+                                "memory_total": int(parts[4]),
+                                "temperature": int(parts[5]),
+                            }
+                        )
+                return {
+                    "available": True,
+                    "gpus": gpus,
+                    "recommended_pipeline": "vina_gpu",
+                    "vina_available": check_vina(),
+                    "gnina_available": check_gnina(),
+                    "note": f"GPU detected ({len(gpus)} device(s)) - AutoDock Vina GPU will be used for fast docking",
+                }
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            logger.warning(f"GPU detection error: {e}")
+    else:
+        logger.info("nvidia-smi not found in PATH or common Windows locations")
 
     return {
-        "available": False, 
-        "gpus": [], 
+        "available": False,
+        "gpus": [],
         "message": "No GPU detected",
         "recommended_pipeline": "gnina_rf" if check_vina() else "simulated",
         "vina_available": check_vina(),
-        "gnina_available": check_gnina()
+        "gnina_available": check_gnina(),
     }
 
 
 # ============================================================
 # Pharmacophore Modeling Endpoints
 # ============================================================
+
 
 class PharmacophoreRequest(BaseModel):
     smiles: Optional[str] = None
@@ -1716,23 +1901,23 @@ class AlignRequest(BaseModel):
 def generate_pharmacophore(request: PharmacophoreRequest):
     """
     Generate pharmacophore from SMILES or PDB structure.
-    
+
     Returns pharmacophore features with 3D coordinates for visualization.
     """
     try:
         from pharmacophore import get_engine
-        
+
         engine = get_engine()
-        
+
         if request.smiles:
             result = engine.generate_from_smiles(request.smiles)
         elif request.pdb:
             result = engine.generate_from_pdb(request.pdb)
         else:
             return {"success": False, "error": "Provide SMILES or PDB input"}
-        
+
         return result
-        
+
     except Exception as e:
         logger.error(f"Pharmacophore generation error: {e}")
         return {"success": False, "error": str(e)}
@@ -1742,21 +1927,21 @@ def generate_pharmacophore(request: PharmacophoreRequest):
 def screen_library(request: ScreenRequest):
     """
     Screen a library of compounds against pharmacophore features.
-    
+
     Filters compounds based on feature matching.
     """
     try:
         from pharmacophore import get_engine
-        
+
         engine = get_engine()
         result = engine.screen_library(
             library_smiles=request.library,
             min_features=request.min_features,
-            required_features=request.required_features
+            required_features=request.required_features,
         )
-        
+
         return result
-        
+
     except Exception as e:
         logger.error(f"Pharmacophore screening error: {e}")
         return {"success": False, "error": str(e)}
@@ -1766,20 +1951,19 @@ def screen_library(request: ScreenRequest):
 def align_molecule(request: AlignRequest):
     """
     Align a molecule to a reference pharmacophore.
-    
+
     Returns alignment score and RMSD.
     """
     try:
         from pharmacophore import get_engine
-        
+
         engine = get_engine()
         result = engine.align_to_pharmacophore(
-            ref_features=request.reference_features,
-            mobile_smiles=request.mobile_smiles
+            ref_features=request.reference_features, mobile_smiles=request.mobile_smiles
         )
-        
+
         return result
-        
+
     except Exception as e:
         logger.error(f"Pharmacophore alignment error: {e}")
         return {"success": False, "error": str(e)}
@@ -1789,54 +1973,51 @@ def align_molecule(request: AlignRequest):
 def get_feature_info():
     """
     Get information about available pharmacophore features.
-    
+
     Returns feature types, colors, and descriptions.
     """
     from pharmacophore import FEATURE_COLORS, FEATURE_RADII
-    
+
     features = [
         {
             "name": "Donor",
             "color": FEATURE_COLORS.get("Donor"),
             "radius": FEATURE_RADII.get("Donor"),
-            "description": "Hydrogen bond donor"
+            "description": "Hydrogen bond donor",
         },
         {
-            "name": "Acceptor", 
+            "name": "Acceptor",
             "color": FEATURE_COLORS.get("Acceptor"),
             "radius": FEATURE_RADII.get("Acceptor"),
-            "description": "Hydrogen bond acceptor"
+            "description": "Hydrogen bond acceptor",
         },
         {
             "name": "Hydrophobic",
             "color": FEATURE_COLORS.get("Hydrophobic"),
             "radius": FEATURE_RADII.get("Hydrophobic"),
-            "description": "Hydrophobic region"
+            "description": "Hydrophobic region",
         },
         {
             "name": "Aromatic",
             "color": FEATURE_COLORS.get("Aromatic"),
             "radius": FEATURE_RADII.get("Aromatic"),
-            "description": "Aromatic ring center"
+            "description": "Aromatic ring center",
         },
         {
             "name": "PosIonizable",
             "color": FEATURE_COLORS.get("PosIonizable"),
             "radius": FEATURE_RADII.get("PosIonizable"),
-            "description": "Positive ionizable group"
+            "description": "Positive ionizable group",
         },
         {
             "name": "NegIonizable",
             "color": FEATURE_COLORS.get("NegIonizable"),
             "radius": FEATURE_RADII.get("NegIonizable"),
-            "description": "Negative ionizable group"
+            "description": "Negative ionizable group",
         },
     ]
-    
-    return {
-        "features": features,
-        "total_types": len(features)
-    }
+
+    return {"features": features, "total_types": len(features)}
 
 
 @app.get("/pharmacophore/visualization/{feature_type}")
@@ -1845,19 +2026,15 @@ def get_feature_visualization(feature_type: str):
     Get 3D visualization data for a specific feature type.
     """
     from pharmacophore import FEATURE_COLORS, FEATURE_RADII
-    
+
     color = FEATURE_COLORS.get(feature_type, "#888888")
     radius = FEATURE_RADII.get(feature_type, 1.5)
-    
+
     return {
         "type": feature_type,
         "color": color,
         "radius": radius,
-        "sphere_config": {
-            "radius": radius,
-            "color": color,
-            "alpha": 0.5
-        }
+        "sphere_config": {"radius": radius, "color": color, "alpha": 0.5},
     }
 
 
@@ -1867,8 +2044,12 @@ def get_feature_visualization(feature_type: str):
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "host.docker.internal:11434")
 LLM_SETTINGS = {
-    "provider": "ollama", "model": "llama3.2", "api_key": "",
-    "base_url": f"http://{OLLAMA_HOST}/v1", "temperature": 0.7, "max_tokens": 2048
+    "provider": "ollama",
+    "model": "llama3.2",
+    "api_key": "",
+    "base_url": f"http://{OLLAMA_HOST}/v1",
+    "temperature": 0.7,
+    "max_tokens": 2048,
 }
 
 
@@ -1882,11 +2063,16 @@ def get_ollama_models():
     """Get list of installed Ollama models"""
     try:
         import requests
+
         response = requests.get(f"http://{OLLAMA_HOST}/api/tags", timeout=5)
         if response.status_code == 200:
             models = response.json().get("models", [])
             return {"available": True, "models": [m.get("name", "") for m in models]}
-        return {"available": False, "models": [], "error": f"HTTP {response.status_code}"}
+        return {
+            "available": False,
+            "models": [],
+            "error": f"HTTP {response.status_code}",
+        }
     except Exception as e:
         return {"available": False, "models": [], "error": str(e)}
 
@@ -1908,7 +2094,9 @@ class LLMTestRequest(BaseModel):
 def llm_test(req: LLMTestRequest):
     """Test LLM connection with actual API call"""
     test_url = req.base_url or f"http://{OLLAMA_HOST}/v1"
-    logger.info(f"Testing LLM connection: provider={req.provider}, model={req.model}, base_url={test_url}")
+    logger.info(
+        f"Testing LLM connection: provider={req.provider}, model={req.model}, base_url={test_url}"
+    )
 
     headers = {"Content-Type": "application/json"}
     if req.api_key:
@@ -1920,18 +2108,21 @@ def llm_test(req: LLMTestRequest):
 
     payload = {
         "model": req.model,
-        "messages": [{"role": "user", "content": "Say 'Connection successful' in exactly those words."}],
+        "messages": [
+            {
+                "role": "user",
+                "content": "Say 'Connection successful' in exactly those words.",
+            }
+        ],
         "max_tokens": 50,
         "temperature": 0.1,
     }
 
     try:
         import requests as req_lib
+
         response = req_lib.post(
-            f"{test_url}/chat/completions",
-            json=payload,
-            headers=headers,
-            timeout=30
+            f"{test_url}/chat/completions", json=payload, headers=headers, timeout=30
         )
 
         if response.status_code == 200:
@@ -1942,11 +2133,19 @@ def llm_test(req: LLMTestRequest):
         else:
             error_msg = response.text[:200]
             logger.warning(f"LLM test failed: {response.status_code} - {error_msg}")
-            return {"status": "error", "response": None, "error": f"HTTP {response.status_code}: {error_msg}"}
+            return {
+                "status": "error",
+                "response": None,
+                "error": f"HTTP {response.status_code}: {error_msg}",
+            }
 
     except req_lib.exceptions.ConnectionError:
         logger.warning(f"LLM test failed: Connection refused - is the server running?")
-        return {"status": "error", "response": None, "error": "Connection refused. Is the server running?"}
+        return {
+            "status": "error",
+            "response": None,
+            "error": "Connection refused. Is the server running?",
+        }
     except req_lib.exceptions.Timeout:
         logger.warning(f"LLM test failed: Request timeout")
         return {"status": "error", "response": None, "error": "Request timeout"}
@@ -1963,13 +2162,25 @@ def api_rdkit_prepare(req: Dict[str, Any]):
     if not content:
         return {"success": False, "error": "No content provided"}
     try:
-        from docking_engine import prepare_protein_from_content, prepare_ligand_from_content
+        from docking_engine import (
+            prepare_protein_from_content,
+            prepare_ligand_from_content,
+        )
+
         if prep_type in ("protein", "receptor"):
             result = prepare_protein_from_content(content, STORAGE_DIR)
-            return result if result else {"success": False, "error": "Protein preparation failed"}
+            return (
+                result
+                if result
+                else {"success": False, "error": "Protein preparation failed"}
+            )
         elif prep_type == "ligand":
             result = prepare_ligand_from_content(content, "sdf", STORAGE_DIR)
-            return result if result else {"success": False, "error": "Ligand preparation failed"}
+            return (
+                result
+                if result
+                else {"success": False, "error": "Ligand preparation failed"}
+            )
         else:
             return {"success": False, "error": f"Unknown type: {prep_type}"}
     except Exception as e:
@@ -1988,10 +2199,17 @@ class BenchmarkRequest(BaseModel):
 async def run_benchmark(request: BenchmarkRequest, background_tasks: BackgroundTasks):
     """Run docking benchmark on PDBbind or custom dataset."""
     import uuid
+
     job_id = f"bench_{uuid.uuid4().hex[:8]}"
 
     try:
-        create_job(job_uuid=job_id, job_name=f"benchmark_{job_id}", receptor_file="", ligand_file="", engine="benchmark")
+        create_job(
+            job_uuid=job_id,
+            job_name=f"benchmark_{job_id}",
+            receptor_file="",
+            ligand_file="",
+            engine="benchmark",
+        )
     except Exception:
         pass
 
@@ -1999,20 +2217,26 @@ async def run_benchmark(request: BenchmarkRequest, background_tasks: BackgroundT
         try:
             update_job_status(job_id, "running")
             from benchmarking import run_pdbbind_benchmark
+
             results = run_pdbbind_benchmark(
                 pdbbind_dir=request.dataset_path,
                 output_file=f"{STORAGE_DIR}/benchmarks/{job_id}/report.json",
                 docking_params={
-                    'exhaustiveness': request.exhaustiveness,
-                    'num_modes': request.num_modes,
-                    'enable_flexibility': request.enable_flexibility,
-                }
+                    "exhaustiveness": request.exhaustiveness,
+                    "num_modes": request.num_modes,
+                    "enable_flexibility": request.enable_flexibility,
+                },
             )
-            update_job_status(job_id, "completed", metadata={
-                'rmsd_summary': results.get('rmsd_summary'),
-                'enrichment_metrics': results.get('enrichment_metrics'),
-                'success_rate': results['successful_dockings'] / max(1, results['total_complexes'])
-            })
+            update_job_status(
+                job_id,
+                "completed",
+                metadata={
+                    "rmsd_summary": results.get("rmsd_summary"),
+                    "enrichment_metrics": results.get("enrichment_metrics"),
+                    "success_rate": results["successful_dockings"]
+                    / max(1, results["total_complexes"]),
+                },
+            )
         except Exception as e:
             logger.error(f"Benchmark failed: {e}")
             update_job_status(job_id, "failed", error=str(e))
@@ -2035,7 +2259,11 @@ def get_benchmark_results(job_id: str):
             results = json.load(f)
         return {"job_id": job_id, "status": job.status, "results": results}
 
-    return {"job_id": job_id, "status": job.status, "progress": getattr(job, 'progress', 0)}
+    return {
+        "job_id": job_id,
+        "status": job.status,
+        "progress": getattr(job, "progress", 0),
+    }
 
 
 class InteractionRequest(BaseModel):
@@ -2048,10 +2276,11 @@ class InteractionRequest(BaseModel):
 def analyze_interactions(req: InteractionRequest):
     """Calculate protein-ligand interactions (H-bonds, hydrophobic, pi-stacking, etc.)"""
     from analysis import calculate_protein_ligand_interactions
+
     return calculate_protein_ligand_interactions(
         ligand_mol_block=req.ligand_pdb,
         receptor_pdb=req.receptor_pdb,
-        cutoff=req.cutoff
+        cutoff=req.cutoff,
     )
 
 
@@ -2070,6 +2299,7 @@ async def serve_spa(path: str):
 # ============================================================
 # LLM Configuration Endpoints
 # ============================================================
+
 
 @app.post("/llm/configure")
 def configure_llm(req: Dict):
@@ -2100,6 +2330,7 @@ def get_llm_config():
     """Get current LLM config (without exposing API key)"""
     try:
         from ai.llm_router import _load_config
+
         config = _load_config()
         safe = {k: v for k, v in config.items() if k != "api_key"}
         if config.get("api_key"):
@@ -2112,6 +2343,7 @@ def get_llm_config():
 # ============================================================
 # Brain / AI Chat Endpoints (maps /brain/* -> /chat/*)
 # ============================================================
+
 
 @app.post("/brain/chat")
 def brain_chat(req: ChatRequest):
@@ -2126,6 +2358,7 @@ def brain_chat_status():
 # ============================================================
 # RDKit Molecular Processing Endpoints
 # ============================================================
+
 
 class RDKitPrepareProtein(BaseModel):
     pdb_content: str
@@ -2161,34 +2394,38 @@ def rdkit_prepare_protein(req: RDKitPrepareProtein):
     try:
         from rdkit import Chem
         from rdkit.Chem import AllChem, RemoveHs
-        
+
         mol = Chem.MolFromPDBBlock(req.pdb_content)
         if mol is None:
             return {"success": False, "error": "Invalid PDB content"}
-        
+
         original_atoms = mol.GetNumAtoms()
-        
+
         if req.remove_waters:
-            h_atoms = [a for a in mol.GetAtoms() if a.GetSymbol() == 'O' and a.GetNumResidueConnections() == 1]
+            h_atoms = [
+                a
+                for a in mol.GetAtoms()
+                if a.GetSymbol() == "O" and a.GetNumResidueConnections() == 1
+            ]
             for a in h_atoms[:]:
                 mol.RemoveAtom(a.GetIdx())
-        
+
         if req.add_hydrogens:
             mol = AllChem.AddHs(mol)
-        
+
         pdb_block = Chem.MolToPDBBlock(mol)
-        safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', req.name)
+        safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", req.name)
         pdb_path = os.path.join(STORAGE_DIR, f"{safe_name}_prepared.pdb")
-        with open(pdb_path, 'w') as f:
+        with open(pdb_path, "w") as f:
             f.write(pdb_block)
-        
+
         return {
             "success": True,
             "pdb_path": pdb_path,
             "original_atoms": original_atoms,
             "final_atoms": mol.GetNumAtoms(),
             "waters_removed": req.remove_waters,
-            "hydrogens_added": req.add_hydrogens
+            "hydrogens_added": req.add_hydrogens,
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -2200,30 +2437,30 @@ def rdkit_prepare_receptor_pdbqt(req: RDKitPrepareReceptor):
     try:
         from rdkit import Chem
         from rdkit.Chem import AllChem
-        
+
         mol = Chem.MolFromPDBBlock(req.pdb_content)
         if mol is None:
             return {"success": False, "error": "Invalid PDB content"}
-        
+
         mol = AllChem.AddHs(mol, addCoords=True)
         pdbqt_content = ""
         for atom in mol.GetAtoms():
             pos = mol.GetConformer(0).GetAtomPosition(atom.GetIdx())
-            pdbqt_content += f"ATOM  {atom.GetIdx()+1:5d}  {atom.GetSymbol():<2s}  MOL A{atom.GetIdx()+1:4d}    {pos.x:8.3f}{pos.y:8.3f}{pos.z:8.3f}  1.00  0.00           {atom.GetSymbol():<2s}\n"
+            pdbqt_content += f"ATOM  {atom.GetIdx() + 1:5d}  {atom.GetSymbol():<2s}  MOL A{atom.GetIdx() + 1:4d}    {pos.x:8.3f}{pos.y:8.3f}{pos.z:8.3f}  1.00  0.00           {atom.GetSymbol():<2s}\n"
         pdbqt_content += "END\n"
-        
-        safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', req.name)
+
+        safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", req.name)
         pdbqt_path = os.path.join(STORAGE_DIR, f"{safe_name}_receptor.pdbqt")
-        with open(pdbqt_path, 'w') as f:
+        with open(pdbqt_path, "w") as f:
             f.write(pdbqt_content)
-        
+
         return {
             "success": True,
             "pdbqt_path": pdbqt_path,
-            "pdb_path": pdbqt_path.replace('.pdbqt', '.pdb'),
+            "pdb_path": pdbqt_path.replace(".pdbqt", ".pdb"),
             "method": "RDKit",
             "atoms": mol.GetNumAtoms(),
-            "warning": None
+            "warning": None,
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -2235,41 +2472,41 @@ def rdkit_prepare_ligand(req: RDKitPrepareLigand):
     try:
         from rdkit import Chem
         from rdkit.Chem import AllChem
-        
+
         mol = Chem.MolFromPDBBlock(req.pdb_content)
         if mol is None:
             smiles = req.pdb_content.strip()
             mol = Chem.MolFromSmiles(smiles)
-        
+
         if mol is None:
             return {"success": False, "error": "Invalid ligand content"}
-        
+
         mol = AllChem.AddHs(mol, addCoords=True)
         AllChem.EmbedMolecule(mol, randomSeed=42)
         AllChem.MMFFOptimizeMolecule(mol)
-        
-        safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', req.name)
+
+        safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", req.name)
         pdb_path = os.path.join(STORAGE_DIR, f"{safe_name}_ligand.pdb")
         pdb_block = Chem.MolToPDBBlock(mol)
-        with open(pdb_path, 'w') as f:
+        with open(pdb_path, "w") as f:
             f.write(pdb_block)
-        
+
         pdbqt_content = ""
         for atom in mol.GetAtoms():
             pos = mol.GetConformer(0).GetAtomPosition(atom.GetIdx())
-            pdbqt_content += f"ATOM  {atom.GetIdx()+1:5d}  {atom.GetSymbol():<2s}  MOL A{atom.GetIdx()+1:4d}    {pos.x:8.3f}{pos.y:8.3f}{pos.z:8.3f}  1.00  0.00          A{atom.GetIdx()+1:3d}\n"
+            pdbqt_content += f"ATOM  {atom.GetIdx() + 1:5d}  {atom.GetSymbol():<2s}  MOL A{atom.GetIdx() + 1:4d}    {pos.x:8.3f}{pos.y:8.3f}{pos.z:8.3f}  1.00  0.00          A{atom.GetIdx() + 1:3d}\n"
         pdbqt_content += "END\n"
         pdbqt_path = os.path.join(STORAGE_DIR, f"{safe_name}_ligand.pdbqt")
-        with open(pdbqt_path, 'w') as f:
+        with open(pdbqt_path, "w") as f:
             f.write(pdbqt_content)
-        
+
         return {
             "success": True,
             "pdbqt_path": pdbqt_path,
             "pdb_path": pdb_path,
             "num_atoms": mol.GetNumAtoms(),
             "meeko_used": False,
-            "message": "Ligand prepared with RDKit"
+            "message": "Ligand prepared with RDKit",
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -2281,28 +2518,25 @@ def rdkit_smiles_to_3d(req: RDKitSmiles3D):
     try:
         from rdkit import Chem
         from rdkit.Chem import AllChem
-        
+
         mol = Chem.MolFromSmiles(req.smiles)
         if mol is None:
             return {"success": False, "error": "Invalid SMILES"}
-        
+
         mol = Chem.AddHs(mol)
         AllChem.EmbedMolecule(mol, randomSeed=42)
         AllChem.MMFFOptimizeMolecule(mol)
-        
-        safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', req.name)
+
+        safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", req.name)
         pdb_path = os.path.join(STORAGE_DIR, f"{safe_name}_3d.pdb")
-        with open(pdb_path, 'w') as f:
+        with open(pdb_path, "w") as f:
             f.write(Chem.MolToPDBBlock(mol))
-        
+
         sdf_path = os.path.join(STORAGE_DIR, f"{safe_name}_3d.sdf")
-        with open(sdf_path, 'w') as f:
+        with open(sdf_path, "w") as f:
             f.write(Chem.MolToSDBlock(mol))
-        
-        return {
-            "sdf_content": Chem.MolToSDBlock(mol),
-            "pdb_path": pdb_path
-        }
+
+        return {"sdf_content": Chem.MolToSDBlock(mol), "pdb_path": pdb_path}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -2313,10 +2547,10 @@ def rdkit_detect_interactions(req: RDKitInteractions):
     try:
         from rdkit import Chem
         from rdkit.Chem import AllChem, Descriptors
-        
+
         rec_mol = Chem.MolFromPDBBlock(req.receptor_pdb_content)
         lig_mol = Chem.MolFromPDBBlock(req.ligand_pdb_content)
-        
+
         if rec_mol is None or lig_mol is None:
             return {
                 "success": False,
@@ -2324,47 +2558,60 @@ def rdkit_detect_interactions(req: RDKitInteractions):
                 "hydrophobic_contacts": [],
                 "total_h_bonds": 0,
                 "total_hydrophobic": 0,
-                "error": "Invalid PDB content"
+                "error": "Invalid PDB content",
             }
-        
+
         h_bonds = []
         hydrophobic = []
-        
+
         for i, lig_atom in enumerate(lig_mol.GetAtoms()):
             for j, rec_atom in enumerate(rec_mol.GetAtoms()):
                 try:
                     lig_pos = lig_mol.GetConformer(0).GetAtomPosition(i)
                     rec_pos = rec_mol.GetConformer(0).GetAtomPosition(j)
-                    dist = ((lig_pos.x - rec_pos.x)**2 + (lig_pos.y - rec_pos.y)**2 + (lig_pos.y - rec_pos.z)**2)**0.5
-                    
+                    dist = (
+                        (lig_pos.x - rec_pos.x) ** 2
+                        + (lig_pos.y - rec_pos.y) ** 2
+                        + (lig_pos.y - rec_pos.z) ** 2
+                    ) ** 0.5
+
                     if dist < 3.5 and dist > 1.0:
-                        if (lig_atom.GetSymbol() in ['O', 'N'] and rec_atom.GetSymbol() in ['O', 'N']):
-                            h_bonds.append({
-                                "ligand_atom": f"{lig_atom.GetSymbol()}{i+1}",
-                                "receptor_atom": f"{rec_atom.GetSymbol()}{j+1}",
-                                "distance_A": round(dist, 2),
-                                "type": "H-bond",
-                                "ligand_pos": [lig_pos.x, lig_pos.y, lig_pos.z],
-                                "receptor_pos": [rec_pos.x, rec_pos.y, rec_pos.z]
-                            })
-                        elif lig_atom.GetSymbol() in ['C'] and rec_atom.GetSymbol() in ['C']:
-                            hydrophobic.append({
-                                "ligand_atom": f"C{i+1}",
-                                "receptor_atom": f"C{j+1}",
-                                "distance_A": round(dist, 2),
-                                "type": "hydrophobic",
-                                "ligand_pos": [lig_pos.x, lig_pos.y, lig_pos.z],
-                                "receptor_pos": [rec_pos.x, rec_pos.y, rec_pos.z]
-                            })
+                        if lig_atom.GetSymbol() in [
+                            "O",
+                            "N",
+                        ] and rec_atom.GetSymbol() in ["O", "N"]:
+                            h_bonds.append(
+                                {
+                                    "ligand_atom": f"{lig_atom.GetSymbol()}{i + 1}",
+                                    "receptor_atom": f"{rec_atom.GetSymbol()}{j + 1}",
+                                    "distance_A": round(dist, 2),
+                                    "type": "H-bond",
+                                    "ligand_pos": [lig_pos.x, lig_pos.y, lig_pos.z],
+                                    "receptor_pos": [rec_pos.x, rec_pos.y, rec_pos.z],
+                                }
+                            )
+                        elif lig_atom.GetSymbol() in ["C"] and rec_atom.GetSymbol() in [
+                            "C"
+                        ]:
+                            hydrophobic.append(
+                                {
+                                    "ligand_atom": f"C{i + 1}",
+                                    "receptor_atom": f"C{j + 1}",
+                                    "distance_A": round(dist, 2),
+                                    "type": "hydrophobic",
+                                    "ligand_pos": [lig_pos.x, lig_pos.y, lig_pos.z],
+                                    "receptor_pos": [rec_pos.x, rec_pos.y, rec_pos.z],
+                                }
+                            )
                 except Exception:
                     pass
-        
+
         return {
             "success": True,
             "h_bonds": h_bonds[:20],
             "hydrophobic_contacts": hydrophobic[:20],
             "total_h_bonds": len(h_bonds),
-            "total_hydrophobic": len(hydrophobic)
+            "total_hydrophobic": len(hydrophobic),
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -2373,6 +2620,7 @@ def rdkit_detect_interactions(req: RDKitInteractions):
 # ============================================================
 # Molecular Dynamics Endpoints
 # ============================================================
+
 
 class MDDynamicsRequest(BaseModel):
     pdb_content: str = ""
@@ -2398,14 +2646,19 @@ def md_dynamics(req: MDDynamicsRequest):
     """Start molecular dynamics simulation"""
     job_id = f"md_{uuid.uuid4().hex[:8]}"
     logger.info(f"MD dynamics requested: {job_id} ({req.name})")
-    
+
     def run_md():
         MD_JOBS[job_id] = {
-            "status": "running", "progress": 0, "message": "Initializing OpenMM...",
-            "updated_at": datetime.now().isoformat(), "result": None, "error": None
+            "status": "running",
+            "progress": 0,
+            "message": "Initializing OpenMM...",
+            "updated_at": datetime.now().isoformat(),
+            "result": None,
+            "error": None,
         }
         try:
             import subprocess
+
             nvidia = subprocess.run(["nvidia-smi"], capture_output=True, timeout=5)
             platform = "CUDA" if nvidia.returncode == 0 else "CPU"
             MD_JOBS[job_id]["progress"] = 30
@@ -2415,7 +2668,7 @@ def md_dynamics(req: MDDynamicsRequest):
             MD_JOBS[job_id]["progress"] = 100
             MD_JOBS[job_id]["status"] = "completed"
             traj_path = os.path.join(STORAGE_DIR, f"{job_id}_trajectory.dcd")
-            open(traj_path, 'w').close()
+            open(traj_path, "w").close()
             MD_JOBS[job_id]["result"] = {
                 "trajectory_path": traj_path,
                 "final_frame_path": os.path.join(STORAGE_DIR, f"{job_id}_final.pdb"),
@@ -2425,15 +2678,19 @@ def md_dynamics(req: MDDynamicsRequest):
                 "sim_time_ns": req.steps * 0.002,
                 "temperature_K": req.temperature,
                 "avg_energy_kj_mol": -50000.0,
-                "solvent_model": req.solvent_model
+                "solvent_model": req.solvent_model,
             }
         except Exception as e:
             MD_JOBS[job_id]["status"] = "failed"
             MD_JOBS[job_id]["error"] = str(e)
-    
+
     thread = threading.Thread(target=run_md, daemon=True)
     thread.start()
-    return {"job_id": job_id, "status": "started", "message": f"MD job {job_id} started"}
+    return {
+        "job_id": job_id,
+        "status": "started",
+        "message": f"MD job {job_id} started",
+    }
 
 
 MD_JOBS: Dict[str, Any] = {}
@@ -2443,8 +2700,13 @@ MD_JOBS: Dict[str, Any] = {}
 def md_job_status(job_id: str):
     """Get MD job status"""
     if job_id not in MD_JOBS:
-        return {"status": "not_found", "progress": 0, "message": "Job not found",
-                "updated_at": datetime.now().isoformat(), "error": None}
+        return {
+            "status": "not_found",
+            "progress": 0,
+            "message": "Job not found",
+            "updated_at": datetime.now().isoformat(),
+            "error": None,
+        }
     return MD_JOBS[job_id]
 
 
@@ -2452,61 +2714,160 @@ def md_job_status(job_id: str):
 def md_analysis_rmsd(req: MDAnalysisRequest):
     """Calculate RMSD from MD trajectory"""
     logger.info(f"RMSD analysis for job: {req.job_id}")
-    return {"success": True, "output_file": f"rmsd_{req.job_id}.csv",
-            "plot_data": {"data": [{"x": list(range(100)), "y": [0.5 + i*0.01 + (hash(str(i)) % 100)/500 for i in range(100)]}],
-                          "layout": {"title": "RMSD (Å)", "xaxis": {"title": "Frame"}, "yaxis": {"title": "RMSD (Å)"}}}}
+    return {
+        "success": True,
+        "output_file": f"rmsd_{req.job_id}.csv",
+        "plot_data": {
+            "data": [
+                {
+                    "x": list(range(100)),
+                    "y": [
+                        0.5 + i * 0.01 + (hash(str(i)) % 100) / 500 for i in range(100)
+                    ],
+                }
+            ],
+            "layout": {
+                "title": "RMSD (Å)",
+                "xaxis": {"title": "Frame"},
+                "yaxis": {"title": "RMSD (Å)"},
+            },
+        },
+    }
 
 
 @app.post("/md/analysis/rmsf")
 def md_analysis_rmsf(req: MDAnalysisRequest):
     """Calculate RMSF from MD trajectory"""
-    return {"success": True, "output_file": f"rmsf_{req.job_id}.csv",
-            "plot_data": {"data": [{"x": list(range(50)), "y": [0.3 + (hash(str(i)) % 100)/300 for i in range(50)]}],
-                          "layout": {"title": "RMSF (Å)", "xaxis": {"title": "Residue"}, "yaxis": {"title": "RMSF (Å)"}}}}
+    return {
+        "success": True,
+        "output_file": f"rmsf_{req.job_id}.csv",
+        "plot_data": {
+            "data": [
+                {
+                    "x": list(range(50)),
+                    "y": [0.3 + (hash(str(i)) % 100) / 300 for i in range(50)],
+                }
+            ],
+            "layout": {
+                "title": "RMSF (Å)",
+                "xaxis": {"title": "Residue"},
+                "yaxis": {"title": "RMSF (Å)"},
+            },
+        },
+    }
 
 
 @app.post("/md/analysis/energy")
 def md_analysis_energy(req: MDAnalysisRequest):
     """Calculate energy from MD trajectory"""
     frames = 100
-    return {"success": True, "output_file": f"energy_{req.job_id}.csv",
-            "plot_data": {"data": [
-                {"x": list(range(frames)), "y": [-50000 + i*10 + (hash(str(i)) % 1000) for i in range(frames)], "name": "Potential"},
-                {"x": list(range(frames)), "y": [-48000 + i*8 + (hash(str(i+1)) % 1000) for i in range(frames)], "name": "Kinetic"}
-            ], "layout": {"title": "Energy (kJ/mol)", "xaxis": {"title": "Frame"}, "yaxis": {"title": "Energy (kJ/mol)"}}}}
+    return {
+        "success": True,
+        "output_file": f"energy_{req.job_id}.csv",
+        "plot_data": {
+            "data": [
+                {
+                    "x": list(range(frames)),
+                    "y": [
+                        -50000 + i * 10 + (hash(str(i)) % 1000) for i in range(frames)
+                    ],
+                    "name": "Potential",
+                },
+                {
+                    "x": list(range(frames)),
+                    "y": [
+                        -48000 + i * 8 + (hash(str(i + 1)) % 1000)
+                        for i in range(frames)
+                    ],
+                    "name": "Kinetic",
+                },
+            ],
+            "layout": {
+                "title": "Energy (kJ/mol)",
+                "xaxis": {"title": "Frame"},
+                "yaxis": {"title": "Energy (kJ/mol)"},
+            },
+        },
+    }
 
 
 @app.post("/md/analysis/gyration")
 def md_analysis_gyration(req: MDAnalysisRequest):
     """Calculate radius of gyration"""
     frames = 100
-    return {"success": True, "output_file": f"gyration_{req.job_id}.csv",
-            "plot_data": {"data": [{"x": list(range(frames)), "y": [1.5 + (hash(str(i)) % 100)/200 for i in range(frames)]}],
-                          "layout": {"title": "Radius of Gyration (nm)", "xaxis": {"title": "Frame"}, "yaxis": {"title": "Rg (nm)"}}}}
+    return {
+        "success": True,
+        "output_file": f"gyration_{req.job_id}.csv",
+        "plot_data": {
+            "data": [
+                {
+                    "x": list(range(frames)),
+                    "y": [1.5 + (hash(str(i)) % 100) / 200 for i in range(frames)],
+                }
+            ],
+            "layout": {
+                "title": "Radius of Gyration (nm)",
+                "xaxis": {"title": "Frame"},
+                "yaxis": {"title": "Rg (nm)"},
+            },
+        },
+    }
 
 
 @app.post("/md/analysis/sasa")
 def md_analysis_sasa(req: MDAnalysisRequest):
     """Calculate SASA from MD trajectory"""
     frames = 100
-    return {"success": True, "output_file": f"sasa_{req.job_id}.csv",
-            "plot_data": {"data": [{"x": list(range(frames)), "y": [20 + (hash(str(i)) % 500)/50 for i in range(frames)]}],
-                          "layout": {"title": "SASA (nm²)", "xaxis": {"title": "Frame"}, "yaxis": {"title": "SASA (nm²)"}}}}
+    return {
+        "success": True,
+        "output_file": f"sasa_{req.job_id}.csv",
+        "plot_data": {
+            "data": [
+                {
+                    "x": list(range(frames)),
+                    "y": [20 + (hash(str(i)) % 500) / 50 for i in range(frames)],
+                }
+            ],
+            "layout": {
+                "title": "SASA (nm²)",
+                "xaxis": {"title": "Frame"},
+                "yaxis": {"title": "SASA (nm²)"},
+            },
+        },
+    }
 
 
 @app.post("/md/analysis/hbonds")
 def md_analysis_hbonds(req: MDAnalysisRequest):
     """Calculate hydrogen bonds from MD trajectory"""
     frames = 100
-    return {"success": True, "output_file": f"hbonds_{req.job_id}.csv",
-            "plot_data": {"data": [{"x": list(range(frames)), "y": [5 + (hash(str(i)) % 20) for i in range(frames)]}],
-                          "layout": {"title": "Hydrogen Bonds", "xaxis": {"title": "Frame"}, "yaxis": {"title": "H-bonds"}}}}
+    return {
+        "success": True,
+        "output_file": f"hbonds_{req.job_id}.csv",
+        "plot_data": {
+            "data": [
+                {
+                    "x": list(range(frames)),
+                    "y": [5 + (hash(str(i)) % 20) for i in range(frames)],
+                }
+            ],
+            "layout": {
+                "title": "Hydrogen Bonds",
+                "xaxis": {"title": "Frame"},
+                "yaxis": {"title": "H-bonds"},
+            },
+        },
+    }
 
 
 @app.post("/md/analysis/all")
 def md_analysis_all(req: MDAnalysisRequest):
     """Run full MD analysis"""
-    return {"job_id": req.job_id, "status": "completed", "message": "Full analysis complete"}
+    return {
+        "job_id": req.job_id,
+        "status": "completed",
+        "message": "Full analysis complete",
+    }
 
 
 @app.post("/md/publication/package")
@@ -2515,7 +2876,7 @@ def md_publication_package(
     project_name: str = Form(...),
     analysis_job_id: str = Form(None),
     compress: bool = Form(True),
-    notify_on_complete: bool = Form(False)
+    notify_on_complete: bool = Form(False),
 ):
     """Generate publication-ready MD analysis package"""
     pkg_path = os.path.join(STORAGE_DIR, f"publication_{project_name}.zip")
@@ -2560,28 +2921,45 @@ def md_minimize(pdb_content: str = Form(...)):
 # QSAR Modeling Endpoints
 # ============================================================
 
+
 @app.get("/qsar/descriptor-groups")
 def qsar_descriptor_groups():
     """Get available QSAR descriptor groups"""
     return {
-        "groups": ["constitutional", "electronic", "spatial", "topological", "physicochemical"],
+        "groups": [
+            "constitutional",
+            "electronic",
+            "spatial",
+            "topological",
+            "physicochemical",
+        ],
         "descriptors": {
             "constitutional": ["MW", "nAtoms", "nBonds", "nHeavyAtoms", "nHeteroatoms"],
             "electronic": ["LogP", "TPSA", "HBD", "HBA", "MR", "Sigma"],
             "spatial": ["LabuteASA", "Estate", "MaxEStateIndex", "MinEStateIndex"],
-            "topological": ["Kappa1", "Kappa2", "Kappa3", "Chi0", "Chi1", "Chi0n", "Chi1n"],
-            "physicochemical": ["MolWt", "ExactMolWt", "MolLogP", "MolMR"]
-        }
+            "topological": [
+                "Kappa1",
+                "Kappa2",
+                "Kappa3",
+                "Chi0",
+                "Chi1",
+                "Chi0n",
+                "Chi1n",
+            ],
+            "physicochemical": ["MolWt", "ExactMolWt", "MolLogP", "MolMR"],
+        },
     }
 
 
 @app.post("/qsar/descriptors")
-def qsar_descriptors(smiles: List[str] = Body(...), groups: Optional[List[str]] = Body(None)):
+def qsar_descriptors(
+    smiles: List[str] = Body(...), groups: Optional[List[str]] = Body(None)
+):
     """Calculate molecular descriptors for SMILES list"""
     try:
         from rdkit import Chem
         from rdkit.Chem import Descriptors, Crippen, Lipinski, rdMolDescriptors
-        
+
         results = []
         failed = []
         for smi in smiles:
@@ -2589,19 +2967,27 @@ def qsar_descriptors(smiles: List[str] = Body(...), groups: Optional[List[str]] 
             if mol is None:
                 failed.append(smi)
                 continue
-            results.append({
-                "MW": round(Descriptors.MolWt(mol), 3),
-                "LogP": round(Crippen.MolLogP(mol), 3),
-                "HBD": Lipinski.NumHDonors(mol),
-                "HBA": Lipinski.NumHAcceptors(mol),
-                "TPSA": round(rdMolDescriptors.CalcTPSA(mol), 2),
-                "nRotatable": rdMolDescriptors.CalcNumRotatableBonds(mol),
-                "nAromaticRings": rdMolDescriptors.CalcNumAromaticRings(mol),
-                "nAtoms": mol.GetNumAtoms(),
-                "nBonds": mol.GetNumBonds(),
-            })
-        return {"success": True, "descriptors": results, "valid_smiles": [s for s in smiles if s not in failed],
-                "failed_smiles": failed, "n_valid": len(results), "n_failed": len(failed)}
+            results.append(
+                {
+                    "MW": round(Descriptors.MolWt(mol), 3),
+                    "LogP": round(Crippen.MolLogP(mol), 3),
+                    "HBD": Lipinski.NumHDonors(mol),
+                    "HBA": Lipinski.NumHAcceptors(mol),
+                    "TPSA": round(rdMolDescriptors.CalcTPSA(mol), 2),
+                    "nRotatable": rdMolDescriptors.CalcNumRotatableBonds(mol),
+                    "nAromaticRings": rdMolDescriptors.CalcNumAromaticRings(mol),
+                    "nAtoms": mol.GetNumAtoms(),
+                    "nBonds": mol.GetNumBonds(),
+                }
+            )
+        return {
+            "success": True,
+            "descriptors": results,
+            "valid_smiles": [s for s in smiles if s not in failed],
+            "failed_smiles": failed,
+            "n_valid": len(results),
+            "n_failed": len(failed),
+        }
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -2611,17 +2997,26 @@ def qsar_descriptors_upload(
     file: UploadFile = File(...),
     smiles_col: str = Form(...),
     activity_col: str = Form(...),
-    groups: Optional[str] = Form(None)
+    groups: Optional[str] = Form(None),
 ):
     """Upload dataset for QSAR modeling"""
     content = file.file.read().decode()
-    lines = content.strip().split('\n')
+    lines = content.strip().split("\n")
     n_compounds = len(lines) - 1
-    return {"X": [[0]*10 for _ in range(n_compounds)], "y": [0.0]*n_compounds,
-            "feature_names": ["MW", "LogP", "HBD", "HBA", "TPSA"], "n_compounds": n_compounds,
-            "n_features": 10, "activity_mean": 5.0, "activity_std": 2.0,
-            "activity_min": 0.0, "activity_max": 10.0, "nan_count": 0,
-            "failed_smiles": [], "failed_count": 0}
+    return {
+        "X": [[0] * 10 for _ in range(n_compounds)],
+        "y": [0.0] * n_compounds,
+        "feature_names": ["MW", "LogP", "HBD", "HBA", "TPSA"],
+        "n_compounds": n_compounds,
+        "n_features": 10,
+        "activity_mean": 5.0,
+        "activity_std": 2.0,
+        "activity_min": 0.0,
+        "activity_max": 10.0,
+        "nan_count": 0,
+        "failed_smiles": [],
+        "failed_count": 0,
+    }
 
 
 @app.post("/qsar/train")
@@ -2634,7 +3029,7 @@ def qsar_train(
     activity_column: str = Body(...),
     descriptor_groups: List[str] = Body(...),
     cv_folds: int = Body(5),
-    model_params: Optional[Dict] = Body(None)
+    model_params: Optional[Dict] = Body(None),
 ):
     """Train QSAR model"""
     job_id = f"qsar_{uuid.uuid4().hex[:8]}"
@@ -2643,9 +3038,17 @@ def qsar_train(
 
 @app.get("/qsar/train/{train_job_id}/status")
 def qsar_train_status(train_job_id: str):
-    return {"status": "completed", "updated_at": datetime.now().isoformat(),
-            "result": {"model_id": train_job_id, "model_name": "QSAR Model",
-                       "cv_r2": 0.72, "cv_rmse": 0.45, "cv_mae": 0.32}}
+    return {
+        "status": "completed",
+        "updated_at": datetime.now().isoformat(),
+        "result": {
+            "model_id": train_job_id,
+            "model_name": "QSAR Model",
+            "cv_r2": 0.72,
+            "cv_rmse": 0.45,
+            "cv_mae": 0.32,
+        },
+    }
 
 
 @app.get("/qsar/train/{train_job_id}/results")
@@ -2658,11 +3061,17 @@ def qsar_predict(model_id: str = Body(...), smiles: str = Body(...)):
     """Predict activity for single molecule"""
     try:
         from rdkit import Chem
+
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
             return {"success": False, "smiles": smiles, "error": "Invalid SMILES"}
-        return {"success": True, "smiles": smiles, "predicted_activity": 5.5,
-                "ad_status": "in_domain", "ad_leverage": 0.3}
+        return {
+            "success": True,
+            "smiles": smiles,
+            "predicted_activity": 5.5,
+            "ad_status": "in_domain",
+            "ad_leverage": 0.3,
+        }
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -2670,25 +3079,49 @@ def qsar_predict(model_id: str = Body(...), smiles: str = Body(...)):
 @app.post("/qsar/predict/batch")
 def qsar_predict_batch(model_id: str = Body(...), smiles_list: List[str] = Body(...)):
     """Batch prediction"""
-    predictions = [{"smiles": s, "predicted_activity": 5.5, "ad_status": "in_domain"} for s in smiles_list]
-    return {"success": True, "predictions": predictions, "n_total": len(smiles_list),
-            "n_failed": 0, "n_in_domain": len(smiles_list), "n_warning": 0, "n_out_of_domain": 0}
+    predictions = [
+        {"smiles": s, "predicted_activity": 5.5, "ad_status": "in_domain"}
+        for s in smiles_list
+    ]
+    return {
+        "success": True,
+        "predictions": predictions,
+        "n_total": len(smiles_list),
+        "n_failed": 0,
+        "n_in_domain": len(smiles_list),
+        "n_warning": 0,
+        "n_out_of_domain": 0,
+    }
 
 
 @app.get("/qsar/models")
 def qsar_models():
-    return {"models": [{"model_id": "default", "name": "Default QSAR Model",
-                        "model_type": "RandomForest", "metrics": {"cv_r2": 0.72},
-                        "created_at": datetime.now().isoformat()}]}
+    return {
+        "models": [
+            {
+                "model_id": "default",
+                "name": "Default QSAR Model",
+                "model_type": "RandomForest",
+                "metrics": {"cv_r2": 0.72},
+                "created_at": datetime.now().isoformat(),
+            }
+        ]
+    }
 
 
 @app.get("/qsar/models/{model_id}")
 def qsar_model(model_id: str):
-    return {"model_id": model_id, "name": "QSAR Model", "model_type": "RandomForest",
-            "feature_names": ["MW", "LogP"], "n_features": 5,
-            "metrics": {"cv_r2": 0.72, "cv_rmse": 0.45},
-            "activity_column": "activity", "descriptor_groups": ["constitutional"],
-            "created_at": datetime.now().isoformat()}
+    return {
+        "model_id": model_id,
+        "name": "QSAR Model",
+        "model_type": "RandomForest",
+        "feature_names": ["MW", "LogP"],
+        "n_features": 5,
+        "metrics": {"cv_r2": 0.72, "cv_rmse": 0.45},
+        "activity_column": "activity",
+        "descriptor_groups": ["constitutional"],
+        "created_at": datetime.now().isoformat(),
+    }
 
 
 @app.delete("/qsar/models/{model_id}")
@@ -2701,35 +3134,43 @@ def qsar_delete_model(model_id: str):
 # ============================================================
 
 
-
-
 # ============================================================
 # Analysis Export Endpoints
 # ============================================================
+
 
 @app.post("/analysis/export/top-hits")
 def export_top_hits(
     docking_results: List[Dict] = Body(...),
     top_n: int = Body(10),
     sort_by: str = Body("vina_score"),
-    format: str = Body("csv")
+    format: str = Body("csv"),
 ):
     """Export top docking hits"""
     sorted_results = sorted(docking_results, key=lambda x: x.get(sort_by, 0))[:top_n]
     if format == "csv":
         lines = ["ligand_id,vina_score,gnina_score,rf_score"]
         for r in sorted_results:
-            lines.append(f"{r.get('ligand_id','')},{r.get('vina_score','')},{r.get('gnina_score','')},{r.get('rf_score','')}")
+            lines.append(
+                f"{r.get('ligand_id', '')},{r.get('vina_score', '')},{r.get('gnina_score', '')},{r.get('rf_score', '')}"
+            )
         content = "\n".join(lines)
     else:
         import json
+
         content = json.dumps(sorted_results, indent=2)
-    return {"format": format, "content": content, "filename": f"top_hits.{format}", "count": len(sorted_results)}
+    return {
+        "format": format,
+        "content": content,
+        "filename": f"top_hits.{format}",
+        "count": len(sorted_results),
+    }
 
 
 # ============================================================
 # Analysis Service (Insight Generator) - from v2.0.0
 # ============================================================
+
 
 class LigandRecord(BaseModel):
     ligand_id: str
@@ -2881,11 +3322,13 @@ def filter_admet(ligands: List[LigandRecord]):
         else:
             checks["rotatable_ok"] = None
 
-        results.append({
-            "ligand_id": lig.ligand_id,
-            "passed": passed,
-            "checks": checks,
-        })
+        results.append(
+            {
+                "ligand_id": lig.ligand_id,
+                "passed": passed,
+                "checks": checks,
+            }
+        )
 
     passed_ids = [r["ligand_id"] for r in results if r["passed"]]
     return {
@@ -2928,17 +3371,19 @@ def consensus_score(ligands: List[LigandRecord]):
             norm_weights = [w / total_w for w in weights_list]
             consensus = round(sum(s * w for s, w in zip(scores, norm_weights)), 4)
 
-        results.append({
-            "ligand_id": lig.ligand_id,
-            "consensus_score": consensus,
-            "n_methods": len(scores),
-            "methods_used": {
-                "vina": lig.vina_score,
-                "gnina": lig.gnina_score,
-                "rf_score": lig.rf_score,
-                "md_stability": lig.md_stability,
-            },
-        })
+        results.append(
+            {
+                "ligand_id": lig.ligand_id,
+                "consensus_score": consensus,
+                "n_methods": len(scores),
+                "methods_used": {
+                    "vina": lig.vina_score,
+                    "gnina": lig.gnina_score,
+                    "rf_score": lig.rf_score,
+                    "md_stability": lig.md_stability,
+                },
+            }
+        )
 
     results.sort(key=lambda x: x["consensus_score"] or -999, reverse=True)
     return {
@@ -2950,9 +3395,7 @@ def consensus_score(ligands: List[LigandRecord]):
 
 @app.post("/analysis/report")
 def generate_analysis_report(
-    job_uuid: str,
-    ligand_ids: List[str],
-    summary: Optional[Dict] = None
+    job_uuid: str, ligand_ids: List[str], summary: Optional[Dict] = None
 ):
     """
     Generate a text/JSON analysis report for a set of ligands.
@@ -2971,12 +3414,14 @@ def generate_analysis_report(
         for k, v in summary.items():
             report_lines.append(f"  {k}: {v}")
 
-    report_lines.extend([
-        "",
-        "---",
-        "This report was generated by BioDockify Studio AI Analysis Service.",
-        "Pipeline: Docking → MD Simulation → Consensus Ranking → ADMET Filter",
-    ])
+    report_lines.extend(
+        [
+            "",
+            "---",
+            "This report was generated by BioDockify Studio AI Analysis Service.",
+            "Pipeline: Docking → MD Simulation → Consensus Ranking → ADMET Filter",
+        ]
+    )
 
     report_text = "\n".join(report_lines)
 
@@ -3027,6 +3472,7 @@ def interactions_summary(interactions: List[Dict[str, Any]]):
 # ADMET Prediction Service - from v2.0.0
 # ============================================================
 
+
 class ADMETPredictionRequest(BaseModel):
     smiles: str
     predict_absorption: bool = True
@@ -3044,11 +3490,11 @@ def predict_admet(request: ADMETPredictionRequest):
     try:
         from rdkit import Chem
         from rdkit.Chem import Descriptors, Crippen
-        
+
         mol = Chem.MolFromSmiles(request.smiles)
         if not mol:
             return {"error": "Invalid SMILES", "valid": False}
-        
+
         mw = Descriptors.MolWt(mol)
         logp = Crippen.MolLogP(mol)
         tpsa = Descriptors.TPSA(mol)
@@ -3057,7 +3503,7 @@ def predict_admet(request: ADMETPredictionRequest):
         rotatable = Descriptors.NumRotatableBonds(mol)
         num_hetero_atoms = Descriptors.NumHeteroatoms(mol)
         num_heavy_atoms = Descriptors.HeavyAtomCount(mol)
-        
+
         results = {
             "valid": True,
             "smiles": request.smiles,
@@ -3070,17 +3516,21 @@ def predict_admet(request: ADMETPredictionRequest):
                 "rotatable_bonds": rotatable,
                 "hetero_atoms": num_hetero_atoms,
                 "heavy_atoms": num_heavy_atoms,
-            }
+            },
         }
-        
+
         if request.predict_absorption:
             results["absorption"] = {
                 "intestinal_absorption": "high" if logp < 5 and tpsa < 140 else "low",
-                "caco2_permeability": "high" if logp < 3 else "moderate" if logp < 5 else "low",
+                "caco2_permeability": "high"
+                if logp < 3
+                else "moderate"
+                if logp < 5
+                else "low",
                 "kidney_filtering": "likely" if mw < 50000 else "unlikely",
                 "p_gp_substrate": False if num_hetero_atoms < 5 else True,
             }
-        
+
         if request.predict_distribution:
             results["distribution"] = {
                 "bbb_permeability": "high" if logp > 0 and mw < 400 else "low",
@@ -3088,41 +3538,53 @@ def predict_admet(request: ADMETPredictionRequest):
                 "volume_distribution": round(mw / 1000, 2),
                 "fraction_unbound": round(1.0 - (logp / 10), 3) if logp < 10 else 0.1,
             }
-        
+
         if request.predict_metabolism:
             results["metabolism"] = {
                 "cyp_inhibition_1a2": False if num_hetero_atoms < 3 else True,
                 "cyp_inhibition_2c9": False if num_hetero_atoms < 4 else True,
                 "cyp_inhibition_2d6": False if rotatable < 5 else True,
                 "cyp_inhibition_3a4": False if num_hetero_atoms < 6 else True,
-                "metabolic_stability": "high" if num_rotatable_bonds < 5 else "moderate" if rotatable < 10 else "low",
+                "metabolic_stability": "high"
+                if num_rotatable_bonds < 5
+                else "moderate"
+                if rotatable < 10
+                else "low",
             }
-        
+
         if request.predict_excretion:
             results["excretion"] = {
                 "clearance": round(10 / (mw / 100), 2),
                 "half_life": round(mw / 100, 1),
-                "renal_excretion": "high" if mw < 500 else "moderate" if mw < 1000 else "low",
+                "renal_excretion": "high"
+                if mw < 500
+                else "moderate"
+                if mw < 1000
+                else "low",
             }
-        
+
         if request.predict_toxicity:
             results["toxicity"] = {
                 "ames_test": "mutagenic" if num_hetero_atoms > 8 else "non-mutagenic",
-                "hERG_inhibition": "potential" if logp > 4 and num_hetero_atoms > 5 else "low",
+                "hERG_inhibition": "potential"
+                if logp > 4 and num_hetero_atoms > 5
+                else "low",
                 "hepatotoxicity": "potential" if num_hetero_atoms > 10 else "low",
                 "lD50_oral_rat": round(5000 / (mw / 100), 1),
             }
-        
+
         results["overall"] = {
-            "drug_like": mw < 500 and logp < 5 and hbd <= 5 and hba <= 10 and rotatable <= 10,
-            "lipinski_violations": sum([
-                mw > 500, logp > 5, hbd > 5, hba > 10
-            ]),
+            "drug_like": mw < 500
+            and logp < 5
+            and hbd <= 5
+            and hba <= 10
+            and rotatable <= 10,
+            "lipinski_violations": sum([mw > 500, logp > 5, hbd > 5, hba > 10]),
             "lead_like": mw < 450 and logp < 4,
         }
-        
+
         return results
-        
+
     except Exception as e:
         logger.error(f"ADMET prediction error: {e}")
         return {"error": str(e), "valid": False}
@@ -3140,7 +3602,7 @@ def predict_admet_batch(smiles_list: List[str]):
             results.append({"smiles": smiles, **result})
         except Exception as e:
             results.append({"smiles": smiles, "error": str(e), "valid": False})
-    
+
     return {
         "count": len(results),
         "valid_count": sum(1 for r in results if r.get("valid", False)),
@@ -3156,28 +3618,32 @@ def filter_by_admet(smiles_list: List[str]):
     """
     passed = []
     failed = []
-    
+
     for smiles in smiles_list:
         try:
             result = predict_admet(ADMETPredictionRequest(smiles=smiles))
             if result.get("valid") and result.get("overall", {}).get("drug_like"):
-                passed.append({
-                    "smiles": smiles,
-                    "mw": result["properties"]["mw"],
-                    "logp": result["properties"]["logp"],
-                })
+                passed.append(
+                    {
+                        "smiles": smiles,
+                        "mw": result["properties"]["mw"],
+                        "logp": result["properties"]["logp"],
+                    }
+                )
             else:
                 failed.append({"smiles": smiles})
         except Exception:
             failed.append({"smiles": smiles})
-    
+
     return {
         "total": len(smiles_list),
         "passed": len(passed),
         "failed": len(failed),
         "passed_ligands": passed,
         "failed_ligands": failed,
-        "pass_rate": round(len(passed) / len(smiles_list) * 100, 2) if smiles_list else 0,
+        "pass_rate": round(len(passed) / len(smiles_list) * 100, 2)
+        if smiles_list
+        else 0,
     }
 
 
@@ -3242,19 +3708,25 @@ def monitor_job(request: JobMonitorRequest):
     job = get_job(request.job_id)
     if not job:
         return {"error": f"Job {request.job_id} not found", "status": "unknown"}
-    
+
     status = job.get("status", "unknown")
     error = job.get("error")
     retry_count = job.get("retry_count", 0)
     created_at = job.get("created_at", datetime.now().isoformat())
-    
+
     try:
-        age_seconds = (datetime.now() - datetime.fromisoformat(created_at)).total_seconds()
+        age_seconds = (
+            datetime.now() - datetime.fromisoformat(created_at)
+        ).total_seconds()
     except:
         age_seconds = 0
-    
-    is_stale = age_seconds > JOB_TIMEOUT_SECONDS and status in ("pending", "running", "preparing")
-    
+
+    is_stale = age_seconds > JOB_TIMEOUT_SECONDS and status in (
+        "pending",
+        "running",
+        "preparing",
+    )
+
     if status == "failed":
         if retry_count < MAX_RETRIES:
             return {
@@ -3278,7 +3750,7 @@ def monitor_job(request: JobMonitorRequest):
                 "action": "escalate",
                 "message": f"Job failed after {MAX_RETRIES} retries: {error}",
             }
-    
+
     if is_stale:
         if retry_count < MAX_RETRIES:
             return {
@@ -3292,7 +3764,7 @@ def monitor_job(request: JobMonitorRequest):
             "action": "escalate",
             "message": f"Job stale for {int(age_seconds)}s and max retries exceeded",
         }
-    
+
     if status == "completed":
         result = job.get("result")
         validation = _validate_result(request.service, result)
@@ -3308,7 +3780,7 @@ def monitor_job(request: JobMonitorRequest):
             "action": "revalidate",
             "message": f"Result validation warning: {validation.get('reason')}",
         }
-    
+
     return {
         "status": status,
         "action": "monitor",
@@ -3324,12 +3796,12 @@ def retry_job(request: RetryRequest):
     job = get_job(request.job_id)
     if not job:
         return {"error": f"Job {request.job_id} not found"}
-    
+
     retry_count = job.get("retry_count", 0) + 1
     backoff_seconds = min(2**retry_count * 10, 300)
-    
+
     update_job_status(request.job_id, job.get("status", "running"), error=None)
-    
+
     return {
         "success": True,
         "job_id": request.job_id,
@@ -3346,12 +3818,12 @@ def apply_fallback(request: FallbackRequest):
     """
     fallback_key = f"{request.service}:{request.strategy}"
     fallback = FALLBACK_STRATEGIES.get(fallback_key)
-    
+
     if not fallback:
         return {"error": f"No fallback strategy for {fallback_key}"}
-    
+
     strategy_type = fallback.get("strategy")
-    
+
     if strategy_type == "switch_engine":
         return {
             "success": True,
@@ -3388,7 +3860,7 @@ def apply_fallback(request: FallbackRequest):
             "message": fallback.get("description"),
             "requeue": True,
         }
-    
+
     return {"success": False, "message": f"Unknown strategy type: {strategy_type}"}
 
 
@@ -3398,7 +3870,7 @@ def escalate_job(job_id: str, service: str, reason: str):
     Escalate a failed job to notifications and log.
     """
     logger.warning(f"Job {job_id} ({service}) escalated: {reason}")
-    
+
     return {
         "success": True,
         "job_id": job_id,
@@ -3414,30 +3886,34 @@ def queue_status():
     Get status of all job queues.
     """
     jobs = get_all_jobs()
-    
+
     services = ["docking", "md", "qsar", "pharmacophore", "rdkit"]
     status = {}
     totals = {"pending": 0, "running": 0, "completed": 0, "failed": 0}
-    
+
     for svc in services:
         svc_jobs = [j for j in jobs if svc in j.get("job_name", "").lower()]
         pending = sum(1 for j in svc_jobs if j.get("status") == "pending")
-        running = sum(1 for j in svc_jobs if j.get("status") in ("running", "preparing", "docking"))
+        running = sum(
+            1
+            for j in svc_jobs
+            if j.get("status") in ("running", "preparing", "docking")
+        )
         completed = sum(1 for j in svc_jobs if j.get("status") == "completed")
         failed = sum(1 for j in svc_jobs if j.get("status") == "failed")
-        
+
         totals["pending"] += pending
         totals["running"] += running
         totals["completed"] += completed
         totals["failed"] += failed
-        
+
         status[svc] = {
             "pending": pending,
             "running": running,
             "completed": completed,
             "failed": failed,
         }
-    
+
     return {
         "services": status,
         "totals": totals,
@@ -3510,6 +3986,7 @@ def _summarize_result(service: str, result: Optional[Dict]) -> Dict[str, Any]:
 # Batch Docking Service - from v2.0.0
 # ============================================================
 
+
 class BatchDockingRequest(BaseModel):
     receptor_content: str
     smiles_list: List[str]
@@ -3530,7 +4007,7 @@ def batch_docking(request: BatchDockingRequest):
     Returns job_id for tracking.
     """
     job_id = str(uuid.uuid4())
-    
+
     create_job(
         job_name=f"batch_docking_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
         receptor_file="uploaded",
@@ -3540,7 +4017,7 @@ def batch_docking(request: BatchDockingRequest):
         binding_energy=None,
         num_poses=len(request.smiles_list),
     )
-    
+
     return {
         "job_id": job_id,
         "status": "pending",
@@ -3558,19 +4035,22 @@ def batch_docking_progress(job_id: str):
     job = get_job(job_id)
     if not job:
         return {"error": "Job not found"}
-    
+
     return {
         "job_id": job_id,
         "status": job.get("status"),
         "total": job.get("num_poses", 0),
         "completed": job.get("num_completed", 0),
-        "progress_percent": round(job.get("num_completed", 0) / max(job.get("num_poses", 1), 1) * 100, 1),
+        "progress_percent": round(
+            job.get("num_completed", 0) / max(job.get("num_poses", 1), 1) * 100, 1
+        ),
     }
 
 
 # ============================================================
 # Lead Optimization Service - from v2.0.0
 # ============================================================
+
 
 class LeadOptimizationRequest(BaseModel):
     smiles: str
@@ -3595,7 +4075,7 @@ def optimize_lead(request: LeadOptimizationRequest):
     Perform lead optimization using iterative mutation and docking.
     """
     variants = [{"smiles": request.smiles, "iteration": 0, "score": None}]
-    
+
     return {
         "original_smiles": request.smiles,
         "target_property": request.target_property,
@@ -3612,7 +4092,7 @@ def mutate_lead(smiles: str, operator: str):
     Apply a mutation operator to a SMILES string.
     """
     new_smiles = smiles
-    
+
     if operator == "add_halogen":
         new_smiles = smiles + "F"
     elif operator == "bioisostere":
@@ -3625,7 +4105,7 @@ def mutate_lead(smiles: str, operator: str):
         new_smiles = smiles + "N"
     elif operator == "add_hba":
         new_smiles = smiles + "O"
-    
+
     return {
         "original_smiles": smiles,
         "new_smiles": new_smiles,
@@ -3642,21 +4122,21 @@ def score_variant(smiles: str):
     try:
         from rdkit import Chem
         from rdkit.Chem import Descriptors, Crippen
-        
+
         mol = Chem.MolFromSmiles(smiles)
         if not mol:
             return {"error": "Invalid SMILES", "valid": False}
-        
+
         mw = Descriptors.MolWt(mol)
         logp = Crippen.MolLogP(mol)
         tpsa = Descriptors.TPSA(mol)
         hbd = Descriptors.NumHDonors(mol)
         hba = Descriptors.NumHAcceptors(mol)
         rotatable = Descriptors.NumRotatableBonds(mol)
-        
+
         drug_like = mw < 500 and logp < 5 and hbd <= 5 and hba <= 10 and rotatable <= 10
         violations = sum([mw > 500, logp > 5, hbd > 5, hba > 10, rotatable > 10])
-        
+
         return {
             "valid": True,
             "smiles": smiles,
@@ -3680,6 +4160,7 @@ def score_variant(smiles: str):
 # Shape Screening Service (ROCS-like) - from v2.0.0
 # ============================================================
 
+
 class ShapeScreeningRequest(BaseModel):
     reference_smiles: str
     candidate_smiles_list: List[str]
@@ -3695,36 +4176,53 @@ def screen_by_shape(request: ShapeScreeningRequest):
     try:
         from rdkit import Chem
         from rdkit.Chem import AllChem, Descriptors
-        
+
         ref_mol = Chem.MolFromSmiles(request.reference_smiles)
         if not ref_mol:
             return {"error": "Invalid reference SMILES"}
-        
+
         ref_heavy = Descriptors.HeavyAtomCount(ref_mol)
-        
+
         results = []
         for smiles in request.candidate_smiles_list:
             try:
                 mol = Chem.MolFromSmiles(smiles)
                 if not mol:
                     continue
-                
+
                 candidate_heavy = Descriptors.HeavyAtomCount(mol)
-                size_ratio = min(ref_heavy, candidate_heavy) / max(ref_heavy, candidate_heavy)
+                size_ratio = min(ref_heavy, candidate_heavy) / max(
+                    ref_heavy, candidate_heavy
+                )
                 shape_score = size_ratio * 0.8 + 0.2
-                
-                results.append({
-                    "smiles": smiles,
-                    "shape_score": round(shape_score, 4),
-                    "color_score": round(1.0 - abs(ref_heavy - candidate_heavy) / max(ref_heavy, 1) * 0.5, 4),
-                    "combo_score": round(
-                        request.shape_weight * shape_score + request.color_weight * (1.0 - abs(ref_heavy - candidate_heavy) / max(ref_heavy, 1) * 0.5),
-                        4
-                    ),
-                })
+
+                results.append(
+                    {
+                        "smiles": smiles,
+                        "shape_score": round(shape_score, 4),
+                        "color_score": round(
+                            1.0
+                            - abs(ref_heavy - candidate_heavy)
+                            / max(ref_heavy, 1)
+                            * 0.5,
+                            4,
+                        ),
+                        "combo_score": round(
+                            request.shape_weight * shape_score
+                            + request.color_weight
+                            * (
+                                1.0
+                                - abs(ref_heavy - candidate_heavy)
+                                / max(ref_heavy, 1)
+                                * 0.5
+                            ),
+                            4,
+                        ),
+                    }
+                )
             except:
                 continue
-        
+
         results.sort(key=lambda x: x["combo_score"], reverse=True)
         return {
             "reference_smiles": request.reference_smiles,
@@ -3740,6 +4238,7 @@ def screen_by_shape(request: ShapeScreeningRequest):
 # ============================================================
 # Notification Service - from v2.0.0
 # ============================================================
+
 
 class NotificationConfig(BaseModel):
     email_enabled: bool = False
@@ -3758,7 +4257,11 @@ def get_notification_status():
     return {
         "email": {
             "enabled": NOTIFICATION_SETTINGS.email_enabled,
-            "configured": bool(NOTIFICATION_SETTINGS.email_smtp_host and NOTIFICATION_SETTINGS.email_from and NOTIFICATION_SETTINGS.email_to),
+            "configured": bool(
+                NOTIFICATION_SETTINGS.email_smtp_host
+                and NOTIFICATION_SETTINGS.email_from
+                and NOTIFICATION_SETTINGS.email_to
+            ),
         },
     }
 
@@ -3776,10 +4279,7 @@ def configure_notifications(config: NotificationConfig):
 
 @app.post("/notifications/send")
 def send_notification_endpoint(
-    event: str,
-    title: str,
-    message: str,
-    details: Optional[Dict] = None
+    event: str, title: str, message: str, details: Optional[Dict] = None
 ):
     sent = []
     failed = []
@@ -3788,11 +4288,15 @@ def send_notification_endpoint(
         try:
             import smtplib
             from email.mime.text import MIMEText
+
             msg = MIMEText(message)
             msg["Subject"] = title
             msg["From"] = NOTIFICATION_SETTINGS.email_from
             msg["To"] = NOTIFICATION_SETTINGS.email_to or ""
-            with smtplib.SMTP(NOTIFICATION_SETTINGS.email_smtp_host, NOTIFICATION_SETTINGS.email_smtp_port or 587) as server:
+            with smtplib.SMTP(
+                NOTIFICATION_SETTINGS.email_smtp_host,
+                NOTIFICATION_SETTINGS.email_smtp_port or 587,
+            ) as server:
                 if NOTIFICATION_SETTINGS.email_from and NOTIFICATION_SETTINGS.email_to:
                     sent.append("email")
         except Exception as e:
@@ -3814,9 +4318,20 @@ def test_notification(channel: str = "email"):
     test_message = "This is a test notification from BioDockify Studio AI. If you receive this, the notification channel is working correctly!"
 
     if channel == "email":
-        if not NOTIFICATION_SETTINGS.email_smtp_host or not NOTIFICATION_SETTINGS.email_from:
-            return {"status": "error", "channel": "email", "message": "Email not configured"}
-        return {"status": "sent", "channel": "email", "message": f"Test email sent to {NOTIFICATION_SETTINGS.email_to}"}
+        if (
+            not NOTIFICATION_SETTINGS.email_smtp_host
+            or not NOTIFICATION_SETTINGS.email_from
+        ):
+            return {
+                "status": "error",
+                "channel": "email",
+                "message": "Email not configured",
+            }
+        return {
+            "status": "sent",
+            "channel": "email",
+            "message": f"Test email sent to {NOTIFICATION_SETTINGS.email_to}",
+        }
 
     return {"error": f"Unknown channel: {channel}"}
 
@@ -3834,7 +4349,10 @@ def crew_status():
         "version": "2.4.0",
         "status": "ready",
         "active_jobs": len(CREW_ACTIVE_JOBS),
-        "jobs": {jid: {"crew": j["crew"], "status": j["status"], "started": j["started"]} for jid, j in CREW_ACTIVE_JOBS.items()},
+        "jobs": {
+            jid: {"crew": j["crew"], "status": j["status"], "started": j["started"]}
+            for jid, j in CREW_ACTIVE_JOBS.items()
+        },
     }
 
 
@@ -3842,13 +4360,41 @@ def crew_status():
 def crew_list_agents():
     return {
         "agents": [
-            {"id": "docking", "name": "Molecular Docking Specialist", "role": "Runs Vina/GNINA/RF docking"},
-            {"id": "chemistry", "name": "Computational Chemistry Expert", "role": "SMILES, properties, optimization"},
-            {"id": "pharmacophore", "name": "Pharmacophore Modeling Expert", "role": "Generate and screen pharmacophores"},
-            {"id": "admet", "name": "ADMET Prediction Specialist", "role": "Absorption, distribution, metabolism, excretion, toxicity"},
-            {"id": "analysis", "name": "Drug Discovery Analysis Expert", "role": "Interactions, scoring, ranking"},
-            {"id": "qsar", "name": "QSAR Modeling Specialist", "role": "Build predictive QSAR models"},
-            {"id": "orchestrator", "name": "Drug Discovery Orchestrator", "role": "Coordinates the team and synthesizes results"},
+            {
+                "id": "docking",
+                "name": "Molecular Docking Specialist",
+                "role": "Runs Vina/GNINA/RF docking",
+            },
+            {
+                "id": "chemistry",
+                "name": "Computational Chemistry Expert",
+                "role": "SMILES, properties, optimization",
+            },
+            {
+                "id": "pharmacophore",
+                "name": "Pharmacophore Modeling Expert",
+                "role": "Generate and screen pharmacophores",
+            },
+            {
+                "id": "admet",
+                "name": "ADMET Prediction Specialist",
+                "role": "Absorption, distribution, metabolism, excretion, toxicity",
+            },
+            {
+                "id": "analysis",
+                "name": "Drug Discovery Analysis Expert",
+                "role": "Interactions, scoring, ranking",
+            },
+            {
+                "id": "qsar",
+                "name": "QSAR Modeling Specialist",
+                "role": "Build predictive QSAR models",
+            },
+            {
+                "id": "orchestrator",
+                "name": "Drug Discovery Orchestrator",
+                "role": "Coordinates the team and synthesizes results",
+            },
         ],
     }
 
@@ -3857,11 +4403,42 @@ def crew_list_agents():
 def crew_list_crews():
     return {
         "crews": [
-            {"id": "virtual_screening", "name": "Virtual Screening", "description": "Screen compound libraries against a target protein", "agents": ["pharmacophore", "docking", "analysis", "admet"]},
-            {"id": "lead_optimization", "name": "Lead Optimization", "description": "Iteratively improve a lead compound", "agents": ["docking", "chemistry", "analysis", "orchestrator"]},
-            {"id": "admet_prediction", "name": "ADMET Prediction", "description": "Full ADMET profiling for compound libraries", "agents": ["chemistry", "admet", "analysis"]},
-            {"id": "docking_analysis", "name": "Docking Analysis", "description": "Dock, analyze, and report", "agents": ["docking", "analysis"]},
-            {"id": "drug_discovery", "name": "Master Drug Discovery", "description": "Full pipeline from target to lead", "agents": ["pharmacophore", "docking", "analysis", "admet", "orchestrator"]},
+            {
+                "id": "virtual_screening",
+                "name": "Virtual Screening",
+                "description": "Screen compound libraries against a target protein",
+                "agents": ["pharmacophore", "docking", "analysis", "admet"],
+            },
+            {
+                "id": "lead_optimization",
+                "name": "Lead Optimization",
+                "description": "Iteratively improve a lead compound",
+                "agents": ["docking", "chemistry", "analysis", "orchestrator"],
+            },
+            {
+                "id": "admet_prediction",
+                "name": "ADMET Prediction",
+                "description": "Full ADMET profiling for compound libraries",
+                "agents": ["chemistry", "admet", "analysis"],
+            },
+            {
+                "id": "docking_analysis",
+                "name": "Docking Analysis",
+                "description": "Dock, analyze, and report",
+                "agents": ["docking", "analysis"],
+            },
+            {
+                "id": "drug_discovery",
+                "name": "Master Drug Discovery",
+                "description": "Full pipeline from target to lead",
+                "agents": [
+                    "pharmacophore",
+                    "docking",
+                    "analysis",
+                    "admet",
+                    "orchestrator",
+                ],
+            },
         ],
     }
 
@@ -3915,7 +4492,12 @@ def crew_job_status(job_id: str):
     if job_id not in CREW_ACTIVE_JOBS:
         return {"error": f"Job {job_id} not found"}
     job = CREW_ACTIVE_JOBS[job_id]
-    resp = {"job_id": job_id, "crew": job["crew"], "status": job["status"], "started": job["started"]}
+    resp = {
+        "job_id": job_id,
+        "crew": job["crew"],
+        "status": job["status"],
+        "started": job["started"],
+    }
     if job["status"] == "completed" and job.get("result"):
         if isinstance(job["result"], dict):
             resp["result"] = job["result"]
@@ -3931,6 +4513,7 @@ async def crew_chat(request: Dict):
     query = request.get("message", "")
     try:
         from crew.flows import DrugDiscoveryFlow
+
         flow = DrugDiscoveryFlow()
         flow_input = {
             "query": query,
@@ -3948,17 +4531,23 @@ async def crew_chat(request: Dict):
         return {"response": response_text, "provider": "crewai", "mode": "multi-agent"}
     except Exception as e:
         logger.error(f"CrewAI chat error: {e}")
-        return {"response": f"CrewAI error: {str(e)}", "provider": "crewai", "mode": "error"}
+        return {
+            "response": f"CrewAI error: {str(e)}",
+            "provider": "crewai",
+            "mode": "error",
+        }
 
 
 # ============================================================
 # CrewAI Production Architecture - v3.2.0
 # ============================================================
 
+
 @app.get("/crew/memory/stats")
 def crew_memory_stats():
     """Get experiment memory statistics"""
     from crew.memory import memory
+
     return memory.get_stats()
 
 
@@ -3966,6 +4555,7 @@ def crew_memory_stats():
 def crew_memory_get(exp_id: str):
     """Get experiment by ID"""
     from crew.memory import memory
+
     result = memory.get(exp_id)
     if not result:
         raise HTTPException(404, f"Experiment {exp_id} not found")
@@ -3976,6 +4566,7 @@ def crew_memory_get(exp_id: str):
 def crew_memory_failures(tool_name: str = None):
     """Get failure patterns from experiment memory"""
     from crew.memory import memory
+
     return memory.get_failure_patterns(tool_name)
 
 
@@ -3983,11 +4574,11 @@ def crew_memory_failures(tool_name: str = None):
 def crew_validate_tool(request: Dict[str, Any]):
     """Validate a tool result with chemical sanity checks"""
     from crew.tools.base import ToolResult, chemical_sanity_check
-    
+
     result_data = request.get("data", {})
     notes = chemical_sanity_check(result_data)
     confidence = 0.9 - (len(notes) * 0.15)
-    
+
     return {
         "validation_notes": notes,
         "confidence": max(0.3, confidence),
@@ -4004,9 +4595,9 @@ def crew_orchestrate(request: Dict[str, Any]):
     """
     from crew.flows import DrugDiscoveryFlow
     from crew.memory import memory
-    
+
     exp_id = f"exp_{uuid.uuid4().hex[:8]}"
-    
+
     try:
         flow = DrugDiscoveryFlow()
         flow_input = {
@@ -4017,38 +4608,46 @@ def crew_orchestrate(request: Dict[str, Any]):
             "compounds": request.get("compounds", []),
             "crew": request.get("crew"),
         }
-        
+
         result = flow.route(flow_input)
-        
-        memory.store(exp_id, {
-            "smiles": request.get("smiles", ""),
-            "target": request.get("target", ""),
-            "query": request.get("query", ""),
-            "crew": request.get("crew"),
-        }, {
-            "status": result.get("status", "unknown"),
-            "confidence": result.get("confidence", 0.9),
-            "validation_notes": result.get("validation_notes", []),
-            "timestamp": datetime.now().isoformat(),
-        })
-        
+
+        memory.store(
+            exp_id,
+            {
+                "smiles": request.get("smiles", ""),
+                "target": request.get("target", ""),
+                "query": request.get("query", ""),
+                "crew": request.get("crew"),
+            },
+            {
+                "status": result.get("status", "unknown"),
+                "confidence": result.get("confidence", 0.9),
+                "validation_notes": result.get("validation_notes", []),
+                "timestamp": datetime.now().isoformat(),
+            },
+        )
+
         return {
             "exp_id": exp_id,
             "status": result.get("status", "completed"),
             "result": result.get("result", ""),
             "confidence": result.get("confidence", 0.9),
         }
-        
+
     except Exception as e:
-        memory.store(exp_id, {
-            "smiles": request.get("smiles", ""),
-            "error": str(e),
-        }, {
-            "status": "failed",
-            "error": str(e),
-            "confidence": 0.1,
-            "timestamp": datetime.now().isoformat(),
-        })
+        memory.store(
+            exp_id,
+            {
+                "smiles": request.get("smiles", ""),
+                "error": str(e),
+            },
+            {
+                "status": "failed",
+                "error": str(e),
+                "confidence": 0.1,
+                "timestamp": datetime.now().isoformat(),
+            },
+        )
         return {"exp_id": exp_id, "status": "failed", "error": str(e)}
 
 
@@ -4058,10 +4657,12 @@ def crew_orchestrate(request: Dict[str, Any]):
 
 # --- Meta-Parameter Learning ---
 
+
 @app.post("/ai/meta-params/suggest")
 def ai_meta_params_suggest(request: Dict[str, Any]):
     """Suggest optimal parameters based on historical outcomes for similar targets."""
     from crew.meta_optimizer import meta_learner
+
     target_info = request.get("target_info", "")
     service = request.get("service", "docking")
     ligand_size = request.get("ligand_size", 0)
@@ -4073,6 +4674,7 @@ def ai_meta_params_suggest(request: Dict[str, Any]):
 def ai_meta_params_record(request: Dict[str, Any]):
     """Record simulation outcome for meta-learning."""
     from crew.meta_optimizer import meta_learner
+
     meta_learner.record_outcome(
         target_info=request.get("target_info", ""),
         service=request.get("service", "docking"),
@@ -4088,10 +4690,12 @@ def ai_meta_params_record(request: Dict[str, Any]):
 def ai_meta_params_stats(family: str = None):
     """Get meta-parameter learning statistics."""
     from crew.meta_optimizer import meta_learner
+
     return meta_learner.get_family_stats(family)
 
 
 # --- Active Learning / Bayesian Optimization ---
+
 
 class ActiveLearningRequest(BaseModel):
     candidate_pool: List[List[float]]
@@ -4107,10 +4711,13 @@ _active_optimizers: Dict[str, Any] = {}
 def ai_active_learning_suggest(request: ActiveLearningRequest):
     """Suggest next compounds to evaluate using Bayesian optimization."""
     from crew.active_learning import BayesianOptimizer
+
     optimizer = BayesianOptimizer()
     if request.observed_X and request.observed_y:
         optimizer.fit(request.observed_X, request.observed_y)
-    suggestions = optimizer.suggest_next(request.candidate_pool, n_suggest=request.n_suggest)
+    suggestions = optimizer.suggest_next(
+        request.candidate_pool, n_suggest=request.n_suggest
+    )
     return {"suggestions": suggestions, "n_candidates": len(request.candidate_pool)}
 
 
@@ -4118,6 +4725,7 @@ def ai_active_learning_suggest(request: ActiveLearningRequest):
 def ai_active_learning_run(request: Dict[str, Any]):
     """Run active learning loop with a scoring function."""
     from crew.active_learning import ActiveLearningLoop, BayesianOptimizer
+
     candidate_pool = request.get("candidate_pool", [])
     scores = request.get("scores", [])
     n_initial = request.get("n_initial", 20)
@@ -4125,7 +4733,7 @@ def ai_active_learning_run(request: Dict[str, Any]):
 
     optimizer = BayesianOptimizer(n_initial=n_initial)
     if candidate_pool and scores:
-        optimizer.fit(candidate_pool[:len(scores)], scores)
+        optimizer.fit(candidate_pool[: len(scores)], scores)
 
     suggestions = optimizer.suggest_next(candidate_pool, n_suggest=batch_size)
     return {
@@ -4137,6 +4745,7 @@ def ai_active_learning_run(request: Dict[str, Any]):
 
 # --- NL-to-DAG Compiler ---
 
+
 class NLWorkflowRequest(BaseModel):
     natural_language: str
     context: Optional[Dict[str, Any]] = None
@@ -4146,6 +4755,7 @@ class NLWorkflowRequest(BaseModel):
 def ai_workflow_compile(request: NLWorkflowRequest):
     """Compile natural language into executable DAG workflow."""
     from crew.nl_compiler import nl_compiler
+
     dag = nl_compiler.compile(request.natural_language, request.context)
     dag = nl_compiler.validate_and_secure(dag)
     return dag
@@ -4155,6 +4765,7 @@ def ai_workflow_compile(request: NLWorkflowRequest):
 def ai_workflow_execute(request: Dict[str, Any]):
     """Execute a compiled workflow DAG with self-healing."""
     from crew.nl_compiler import nl_compiler, self_healing_executor
+
     dag = request.get("dag")
     if not dag:
         nl_text = request.get("natural_language", "")
@@ -4162,7 +4773,10 @@ def ai_workflow_execute(request: Dict[str, Any]):
         dag = nl_compiler.validate_and_secure(dag)
 
     if not dag.get("is_safe"):
-        return {"status": "unsafe", "validation_errors": dag.get("validation_errors", [])}
+        return {
+            "status": "unsafe",
+            "validation_errors": dag.get("validation_errors", []),
+        }
 
     results = []
     for step in dag.get("steps", []):
@@ -4171,10 +4785,15 @@ def ai_workflow_execute(request: Dict[str, Any]):
         if result.get("status") == "failed":
             break
 
-    return {"status": "completed", "results": results, "execution_log": self_healing_executor.execution_log}
+    return {
+        "status": "completed",
+        "results": results,
+        "execution_log": self_healing_executor.execution_log,
+    }
 
 
 # --- Critique Agent ---
+
 
 class CritiqueRequest(BaseModel):
     tool: str
@@ -4186,13 +4805,17 @@ class CritiqueRequest(BaseModel):
 def ai_critique_validate(request: CritiqueRequest):
     """Validate a tool result with the critique agent."""
     from crew.critique_agent import critique_agent
-    return critique_agent.validate(request.tool, request.result, request.confidence_threshold)
+
+    return critique_agent.validate(
+        request.tool, request.result, request.confidence_threshold
+    )
 
 
 @app.post("/ai/critique/cross-reference")
 def ai_critique_cross_reference(smiles: str, target: str = None):
     """Cross-reference a compound against known literature."""
     from crew.critique_agent import critique_agent
+
     return critique_agent.cross_reference(smiles, target)
 
 
@@ -4200,15 +4823,18 @@ def ai_critique_cross_reference(smiles: str, target: str = None):
 def ai_critique_validate_workflow(workflow: Dict[str, Any]):
     """Validate a workflow DAG before execution."""
     from crew.critique_agent import critique_agent
+
     return critique_agent.validate_workflow(workflow)
 
 
 # --- Knowledge Graph ---
 
+
 @app.get("/ai/knowledge-graph/stats")
 def ai_kg_stats():
     """Get knowledge graph statistics."""
     from crew.knowledge_graph import knowledge_graph
+
     return knowledge_graph.get_stats()
 
 
@@ -4216,6 +4842,7 @@ def ai_kg_stats():
 def ai_kg_target_context(uniprot_id: str):
     """Get full context for a target."""
     from crew.knowledge_graph import knowledge_graph
+
     return knowledge_graph.get_target_context(uniprot_id)
 
 
@@ -4223,6 +4850,7 @@ def ai_kg_target_context(uniprot_id: str):
 def ai_kg_similar_targets(uniprot_id: str, n: int = 5):
     """Find similar targets in the same family."""
     from crew.knowledge_graph import knowledge_graph
+
     return knowledge_graph.find_similar_targets(uniprot_id, n)
 
 
@@ -4230,6 +4858,7 @@ def ai_kg_similar_targets(uniprot_id: str, n: int = 5):
 def ai_kg_compound_history(smiles: str):
     """Get compound history."""
     from crew.knowledge_graph import knowledge_graph
+
     return knowledge_graph.get_compound_history(smiles)
 
 
@@ -4237,6 +4866,7 @@ def ai_kg_compound_history(smiles: str):
 def ai_kg_search(q: str):
     """Search the knowledge graph."""
     from crew.knowledge_graph import knowledge_graph
+
     return knowledge_graph.search(q)
 
 
@@ -4244,6 +4874,7 @@ def ai_kg_search(q: str):
 def ai_kg_add_target(request: Dict[str, Any]):
     """Add a target to the knowledge graph."""
     from crew.knowledge_graph import knowledge_graph
+
     knowledge_graph.add_target(
         uniprot_id=request.get("uniprot_id", ""),
         name=request.get("name", ""),
@@ -4258,6 +4889,7 @@ def ai_kg_add_target(request: Dict[str, Any]):
 def ai_kg_add_compound(request: Dict[str, Any]):
     """Add a compound to the knowledge graph."""
     from crew.knowledge_graph import knowledge_graph
+
     knowledge_graph.add_compound(
         smiles=request.get("smiles", ""),
         name=request.get("name"),
@@ -4270,6 +4902,7 @@ def ai_kg_add_compound(request: Dict[str, Any]):
 def ai_kg_link(request: Dict[str, Any]):
     """Link a compound to a target."""
     from crew.knowledge_graph import knowledge_graph
+
     knowledge_graph.link_compound_to_target(
         smiles=request.get("smiles", ""),
         uniprot_id=request.get("uniprot_id", ""),
@@ -4283,6 +4916,7 @@ def ai_kg_link(request: Dict[str, Any]):
 def ai_kg_add_experiment(request: Dict[str, Any]):
     """Record an experiment in the knowledge graph."""
     from crew.knowledge_graph import knowledge_graph
+
     knowledge_graph.add_experiment(
         exp_id=request.get("exp_id", ""),
         smiles=request.get("smiles"),
@@ -4295,6 +4929,7 @@ def ai_kg_add_experiment(request: Dict[str, Any]):
 # ============================================================
 # Classroom Assignment System
 # ============================================================
+
 
 class AssignmentCreateRequest(BaseModel):
     instructor_id: str
@@ -4311,6 +4946,7 @@ class AssignmentCreateRequest(BaseModel):
 def classroom_create_assignment(request: AssignmentCreateRequest):
     """Create a new classroom assignment with 6-char code."""
     from classroom import create_assignment
+
     result = create_assignment(
         instructor_id=request.instructor_id,
         title=request.title,
@@ -4333,6 +4969,7 @@ class AssignmentJoinRequest(BaseModel):
 def classroom_join_assignment(request: AssignmentJoinRequest):
     """Join an assignment using the 6-character code."""
     from classroom import join_assignment
+
     return join_assignment(request.student_id, request.code)
 
 
@@ -4346,6 +4983,7 @@ class AssignmentSubmitRequest(BaseModel):
 def classroom_submit_assignment(request: AssignmentSubmitRequest):
     """Submit an assignment result for auto-grading."""
     from classroom import submit_assignment
+
     return submit_assignment(request.code, request.student_id, request.result)
 
 
@@ -4353,6 +4991,7 @@ def classroom_submit_assignment(request: AssignmentSubmitRequest):
 def classroom_instructor_dashboard(instructor_id: str):
     """Get instructor dashboard with assignments and student progress."""
     from classroom import get_instructor_dashboard
+
     return get_instructor_dashboard(instructor_id)
 
 
@@ -4360,6 +4999,7 @@ def classroom_instructor_dashboard(instructor_id: str):
 def classroom_list_rubrics():
     """List available rubric templates."""
     from classroom import _default_rubric
+
     return {
         "docking": _default_rubric("docking"),
         "qsar": _default_rubric("qsar"),

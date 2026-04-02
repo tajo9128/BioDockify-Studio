@@ -25,10 +25,13 @@ export function Header() {
     }`}>
       <div className="flex items-center justify-between px-4 h-14">
         <div className="flex items-center gap-8">
-          <a href="/" className="flex items-center gap-2">
-            <span className="text-xl font-bold text-blue-500">Bio</span>
-            <span className={`text-xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>Dockify</span>
+          <a href="/" className="flex items-center gap-1.5">
+            <span className="text-xl font-bold text-blue-500">BioDockify</span>
+            <span className={`text-xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>Studio AI</span>
           </a>
+          <span className={`hidden md:block text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+            AI Powered Autonomous Drug Discovery Platform
+          </span>
         </div>
         
         <div className="flex items-center gap-3">
