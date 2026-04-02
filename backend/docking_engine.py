@@ -895,7 +895,8 @@ def smart_dock(
     exhaustiveness: int = 32,
     num_modes: int = 10,
     output_dir: str = "/tmp",
-    enable_flexibility: bool = False
+    enable_flexibility: bool = False,
+    constraints: List[Dict] = None
 ) -> Dict[str, Any]:
     """
     Smart Docking Pipeline with RDKit-only preparation:
@@ -1205,8 +1206,22 @@ def smart_dock(
             num_rotatable
         )
         
+        if constraints:
+            from constraints import apply_constraints
+            pipeline["results"] = apply_constraints(
+                pipeline["results"],
+                ligand_mol,
+                receptor_pdbqt_content,
+                constraints
+            )
+            pipeline["pipeline_stages"].append({
+                "stage": "constraints",
+                "status": "applied",
+                "details": f"{len(constraints)} constraint(s)"
+            })
+        
         if pipeline["results"]:
-            pipeline["best_score"] = pipeline["results"][0].get('composite_score', pipeline["best_score"])
+            pipeline["best_score"] = pipeline["results"][0].get('final_score', pipeline["results"][0].get('composite_score', pipeline["best_score"]))
             logger.info(f"[SmartDock] Composite scoring applied: best={pipeline['best_score']:.4f}")
     
     return pipeline

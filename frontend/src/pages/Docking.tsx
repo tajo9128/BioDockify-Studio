@@ -59,6 +59,7 @@ export function Docking() {
   const [numModes, setNumModes] = useState(10)
   const [scoringFunction, setScoringFunction] = useState<'vina' | 'gnina' | 'rf'>('vina')
   const [enableFlexibility, setEnableFlexibility] = useState(false)
+  const [constraints, setConstraints] = useState<any[]>([])
   
   // Processing state
   const [isProcessing, setIsProcessing] = useState(false)
@@ -290,7 +291,8 @@ END`
           exhaustiveness,
           num_modes: numModes,
           scoring: scoringFunction,
-          enable_flexibility: enableFlexibility
+          enable_flexibility: enableFlexibility,
+          constraints: constraints.length > 0 ? constraints : undefined
         })
       })
       
@@ -566,6 +568,90 @@ END`
               ⚠️ Runtime will increase 3-27x. Estimated: ~{Math.ceil(exhaustiveness * numModes * 3 / 60)}-{Math.ceil(exhaustiveness * numModes * 27 / 60)} min
             </div>
           )}
+        </div>
+        
+        <div className={`p-3 rounded-lg border ${isDark ? 'border-gray-600 bg-gray-800' : 'border-gray-200 bg-gray-50'}`}>
+          <h4 className="font-medium text-sm mb-2">Docking Constraints</h4>
+          <button
+            onClick={() => setConstraints([...constraints, { type: 'hydrogen_bond', weight: 2.0 }])}
+            className={`text-xs px-3 py-1 rounded ${isDark ? 'bg-cyan-900 hover:bg-cyan-800' : 'bg-cyan-100 hover:bg-cyan-200'}`}
+          >
+            + Add Constraint
+          </button>
+          <div className="space-y-2 mt-2">
+            {constraints.map((c, idx) => (
+              <div key={idx} className={`p-2 rounded border ${isDark ? 'border-gray-600' : 'border-gray-300'}`}>
+                <div className="flex justify-between items-center mb-1">
+                  <select
+                    value={c.type}
+                    onChange={e => {
+                      const nc = [...constraints];
+                      nc[idx] = { ...nc[idx], type: e.target.value };
+                      setConstraints(nc);
+                    }}
+                    className={`text-xs p-1 rounded ${isDark ? 'bg-gray-700' : 'bg-white'}`}
+                  >
+                    <option value="hydrogen_bond">H-Bond</option>
+                    <option value="positional">Positional</option>
+                    <option value="metal_coordination">Metal Coordination</option>
+                  </select>
+                  <button
+                    onClick={() => setConstraints(constraints.filter((_, i) => i !== idx))}
+                    className="text-red-500 hover:text-red-400 text-xs"
+                  >
+                    ✕
+                  </button>
+                </div>
+                {c.type === 'hydrogen_bond' && (
+                  <>
+                    <input type="number" placeholder="Ligand atom idx" value={c.ligand_atom_idx || ''}
+                      onChange={e => { const nc = [...constraints]; nc[idx] = { ...nc[idx], ligand_atom_idx: parseInt(e.target.value) }; setConstraints(nc); }}
+                      className={`w-full text-xs p-1 rounded mb-1 ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'} border`} />
+                    <input type="text" placeholder="Receptor pattern (e.g. ASP:OD1)" value={c.receptor_pattern || ''}
+                      onChange={e => { const nc = [...constraints]; nc[idx] = { ...nc[idx], receptor_pattern: e.target.value }; setConstraints(nc); }}
+                      className={`w-full text-xs p-1 rounded ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'} border`} />
+                  </>
+                )}
+                {c.type === 'positional' && (
+                  <>
+                    <input type="text" placeholder="Atom indices (comma-sep)" value={c.atom_indices?.join(',') || ''}
+                      onChange={e => { const nc = [...constraints]; nc[idx] = { ...nc[idx], atom_indices: e.target.value.split(',').map(Number).filter((n: number) => !isNaN(n)) }; setConstraints(nc); }}
+                      className={`w-full text-xs p-1 rounded mb-1 ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'} border`} />
+                    <div className="grid grid-cols-3 gap-1 mb-1">
+                      {['x', 'y', 'z'].map((axis, i) => (
+                        <input key={axis} type="number" placeholder={`Center ${axis}`} value={c.center?.[i] || ''}
+                          onChange={e => { const nc = [...constraints]; const center = [...(nc[idx].center || [0,0,0])]; center[i] = parseFloat(e.target.value) || 0; nc[idx] = { ...nc[idx], center }; setConstraints(nc); }}
+                          className={`text-xs p-1 rounded ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'} border`} />
+                      ))}
+                    </div>
+                    <input type="number" placeholder="Radius (Å)" value={c.radius || ''}
+                      onChange={e => { const nc = [...constraints]; nc[idx] = { ...nc[idx], radius: parseFloat(e.target.value) }; setConstraints(nc); }}
+                      className={`w-full text-xs p-1 rounded ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'} border`} />
+                  </>
+                )}
+                {c.type === 'metal_coordination' && (
+                  <>
+                    <div className="grid grid-cols-3 gap-1 mb-1">
+                      {['x', 'y', 'z'].map((axis, i) => (
+                        <input key={axis} type="number" placeholder={`Metal ${axis}`} value={c.metal_coords?.[i] || ''}
+                          onChange={e => { const nc = [...constraints]; const mc = [...(nc[idx].metal_coords || [0,0,0])]; mc[i] = parseFloat(e.target.value) || 0; nc[idx] = { ...nc[idx], metal_coords: mc }; setConstraints(nc); }}
+                          className={`text-xs p-1 rounded ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'} border`} />
+                      ))}
+                    </div>
+                    <input type="text" placeholder="Donor indices (comma-sep)" value={c.donor_indices?.join(',') || ''}
+                      onChange={e => { const nc = [...constraints]; nc[idx] = { ...nc[idx], donor_indices: e.target.value.split(',').map(Number).filter((n: number) => !isNaN(n)) }; setConstraints(nc); }}
+                      className={`w-full text-xs p-1 rounded ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'} border`} />
+                  </>
+                )}
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-xs text-gray-500">Weight: {c.weight}</span>
+                  <input type="range" min="0.5" max="5.0" step="0.5" value={c.weight || 2.0}
+                    onChange={e => { const nc = [...constraints]; nc[idx] = { ...nc[idx], weight: parseFloat(e.target.value) }; setConstraints(nc); }}
+                    className="flex-1" />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
         
         <button
