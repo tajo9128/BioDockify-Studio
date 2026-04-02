@@ -16,6 +16,29 @@ const FDA_DRUGS = [
   { name: 'Sildenafil', smiles: 'CCCC1=C2N(C(=O)N1CCC)CCCC2c3ccc(cc3)S(=O)(=O)N', use: 'PDE5 inhibitor' },
 ]
 
+const HETEROCYCLES = [
+  { name: 'Pyridine', smiles: 'c1ccncc1' },
+  { name: 'Pyrimidine', smiles: 'c1cncnc1' },
+  { name: 'Piperidine', smiles: 'C1CCNCC1' },
+  { name: 'Pyrrole', smiles: 'c1cc[nH]c1' },
+  { name: 'Imidazole', smiles: 'c1cnc[nH]1' },
+  { name: 'Indole', smiles: 'c1ccc2[nH]ccc2c1' },
+  { name: 'Quinoline', smiles: 'c1ccc2ncccc2c1' },
+  { name: 'Isoquinoline', smiles: 'c1ccc2cnccc2c1' },
+  { name: 'Thiazole', smiles: 'c1cncs1' },
+  { name: 'Furan', smiles: 'c1ccoc1' },
+  { name: 'Thiophene', smiles: 'c1ccsc1' },
+  { name: 'Oxazole', smiles: 'c1cnco1' },
+  { name: 'Pyrazine', smiles: 'c1cncnc1' },
+  { name: 'Triazole', smiles: 'c1cnnc[nH]1' },
+  { name: 'Purine', smiles: 'c1[nH]cnc2c1ncn2' },
+  { name: 'Morpholine', smiles: 'C1COCCN1' },
+  { name: 'Tetrahydropyran', smiles: 'C1CCOCC1' },
+  { name: 'Piperazine', smiles: 'C1CNCCN1' },
+  { name: 'Oxetane', smiles: 'C1COC1' },
+  { name: 'Azetidine', smiles: 'C1CNC1' },
+]
+
 const MUTATION_STRATEGIES = [
   { key: 'add_halogen', label: 'Add Halogen (F, Cl, Br)', icon: '+' },
   { key: 'add_oh', label: 'Add OH Group', icon: '+' },
@@ -52,6 +75,14 @@ export function ChemDraw() {
   const [loading, setLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<'2d' | '3d'>('2d')
   const [loadedFile, setLoadedFile] = useState<string | null>(null)
+  const [iupacName, setIupacName] = useState<string>('')
+  const [inchi, setInchi] = useState<string>('')
+  const [inchiKey, setInchiKey] = useState<string>('')
+  const [molBlock, setMolBlock] = useState<string>('')
+  const [pdb3d, setPdb3d] = useState<string>('')
+  const [showTemplates, setShowTemplates] = useState(false)
+  const [templateFilter, setTemplateFilter] = useState('')
+  const [showExport, setShowExport] = useState(false)
   const canvas2dRef = useRef<HTMLCanvasElement>(null)
   const viewer3dRef = useRef<HTMLDivElement>(null)
 
@@ -67,6 +98,22 @@ export function ChemDraw() {
     }
   }, [activeTab, smiles])
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (e.key === 'q' || e.key === 'Q') {
+        e.preventDefault()
+        cleanupStructure()
+      }
+      if (e.key === 'a' || e.key === 'A') {
+        e.preventDefault()
+        analyzeMolecule()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [smiles])
+
   const draw2D = async () => {
     const canvas = canvas2dRef.current
     if (!canvas || !smiles) return
@@ -75,9 +122,9 @@ export function ChemDraw() {
       if (typeof (window as any).SmilesDrawer === 'undefined') {
         await loadSmilesDrawer()
       }
-      const drawer = new (window as any).SmilesDrawer.Drawer({ width: 400, height: 300, bondThickness: 2 })
+      const drawer = new (window as any).SmilesDrawer.Drawer({ width: 600, height: 400, bondThickness: 2, compactDrawing: false })
       ;(window as any).SmilesDrawer.parse(smiles, (tree: any) => {
-        drawer.draw(tree, canvas, 'light', false)
+        drawer.draw(tree, canvas, 'dark', false)
       })
     } catch (e) {
       console.error('2D draw error:', e)
@@ -114,23 +161,20 @@ export function ChemDraw() {
       const stage = new (window as any).NGL.Stage(container)
       stage.setParameters({ backgroundColor: '0x1a1a2e' })
 
-      const res = await fetch(`/api/chem/dock`, {
+      const res = await fetch('/api/chem/to-3d', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ smiles, receptor_id: 'default' })
+        body: JSON.stringify({ smiles })
       })
       const data = await res.json()
 
-      if (data.job_id) {
-        const pdbRes = await fetch(`/api/chem/3d/${data.job_id}`)
-        const pdbData = await pdbRes.json()
-        if (pdbData.pdb) {
-          stage.removeAllComponents()
-          stage.loadFile(data.job_id + '.pdb', { asTrajectory: false }).then((comp: any) => {
-            comp.addRepresentation('ball-and-stick')
-            stage.autoView()
-          })
-        }
+      if (data.pdb) {
+        stage.removeAllComponents()
+        const blob = new Blob([data.pdb], { type: 'text/plain' })
+        stage.loadFile(URL.createObjectURL(blob), { ext: 'pdb' }).then((comp: any) => {
+          comp.addRepresentation('ball+stick', { color: 'element', radius: 0.3 })
+          stage.autoView()
+        })
       }
     } catch (e) {
       console.error('3D viewer error:', e)
@@ -160,7 +204,6 @@ export function ChemDraw() {
       const content = await file.text()
       
       if (fileType === 'sdf' || fileType === 'mol2' || fileType === 'pdb') {
-        // Send to backend to extract SMILES
         const res = await fetch('/api/chem/extract-smiles', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -173,7 +216,6 @@ export function ChemDraw() {
           setMolName(file.name.replace(/\.[^/.]+$/, ''))
           setLoadedFile(file.name)
         } else {
-          // Fallback: try to analyze directly
           const analyzeRes = await fetch('/api/chem/properties', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -249,6 +291,70 @@ export function ChemDraw() {
     setLoading(false)
   }
 
+  const cleanupStructure = async () => {
+    if (!smiles) return
+    try {
+      const res = await fetch('/api/chem/cleanup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ smiles })
+      })
+      const data = await res.json()
+      if (data.cleaned) {
+        setSmiles(data.cleaned)
+        setSuggestions(prev => [{ text: '✓ Structure cleaned and canonicalized', type: 'good' }, ...prev.slice(0, 4)])
+      }
+    } catch (e) {
+      console.error('Cleanup error:', e)
+    }
+  }
+
+  const fetchIUPAC = async () => {
+    if (!smiles) return
+    try {
+      const res = await fetch('/api/chem/iupac', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ smiles })
+      })
+      const data = await res.json()
+      setIupacName(data.iupac || 'Not found')
+    } catch (e) {
+      setIupacName('OPSIN unavailable')
+    }
+  }
+
+  const fetchInChI = async () => {
+    if (!smiles) return
+    try {
+      const res = await fetch('/api/chem/inchi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ smiles })
+      })
+      const data = await res.json()
+      setInchi(data.inchi || '')
+      setInchiKey(data.inchi_key || '')
+    } catch (e) {
+      console.error('InChI error:', e)
+    }
+  }
+
+  const generateMolBlock = async () => {
+    if (!smiles) return
+    try {
+      const res = await fetch('/api/chem/to-mol', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ smiles })
+      })
+      const data = await res.json()
+      setMolBlock(data.mol_block || '')
+    } catch (e) {
+      console.error('MOL error:', e)
+    }
+  }
+
   const mutateMolecule = (strategy: string) => {
     let newSmiles = smiles
     switch (strategy) {
@@ -296,6 +402,11 @@ export function ChemDraw() {
     setSmiles('')
     setSuggestions([])
     setProperties({ mw: null, logp: null, hbd: null, hba: null, tpsa: null, rotatable: null, formula: null, valid: false })
+    setIupacName('')
+    setInchi('')
+    setInchiKey('')
+    setMolBlock('')
+    setPdb3d('')
   }
 
   const loadExample = (_name: string, smilesStr: string) => {
@@ -316,11 +427,54 @@ export function ChemDraw() {
     }
   }
 
+  const downloadFile = (content: string, filename: string, type: string) => {
+    const blob = new Blob([content], { type })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const exportMOL = async () => {
+    if (!molBlock) await generateMolBlock()
+    if (molBlock) downloadFile(molBlock, `${molName || 'molecule'}.mol`, 'chemical/x-mdl-molfile')
+  }
+
+  const exportSDF = async () => {
+    if (!molBlock) await generateMolBlock()
+    if (molBlock) {
+      const sdf = molBlock + '\n> <Name>\n' + (molName || 'Molecule') + '\n\n> <SMILES>\n' + smiles + '\n\n$$$$\n'
+      downloadFile(sdf, `${molName || 'molecule'}.sdf`, 'chemical/x-mdl-sdfile')
+    }
+  }
+
+  const exportInChI = async () => {
+    if (!inchi) await fetchInChI()
+    const content = `InChI=${inchi}\nInChIKey=${inchiKey}\nSMILES=${smiles}\n`
+    downloadFile(content, `${molName || 'molecule'}.txt`, 'text/plain')
+  }
+
+  const exportPNG = async () => {
+    const canvas = canvas2dRef.current
+    if (!canvas) return
+    const link = document.createElement('a')
+    link.download = `${molName || 'molecule'}.png`
+    link.href = canvas.toDataURL('image/png')
+    link.click()
+  }
+
   const RuleCheck = ({ pass, label, value }: { pass: boolean; label: string; value?: string }) => (
     <div className={`flex justify-between items-center text-xs py-1 px-2 rounded ${pass ? 'text-green-600' : 'text-red-500'}`}>
       <span>{pass ? '✓' : '✗'} {label}</span>
       {value && <span className="font-mono">{value}</span>}
     </div>
+  )
+
+  const filteredTemplates = HETEROCYCLES.filter(t =>
+    t.name.toLowerCase().includes(templateFilter.toLowerCase()) ||
+    t.smiles.toLowerCase().includes(templateFilter.toLowerCase())
   )
 
   return (
@@ -329,18 +483,37 @@ export function ChemDraw() {
         <span className="text-sm font-medium text-cyan-400">ChemDraw</span>
         <span className="text-xs text-gray-400">Design, analyze & dock molecules</span>
         <div className="flex-1" />
+        <span className="text-xs text-gray-500">Q: Cleanup | A: Analyze</span>
+        <Button variant="outline" size="sm" onClick={cleanupStructure}>Cleanup</Button>
         <Button variant="outline" size="sm" onClick={clearEditor}>Clear</Button>
-        <Button variant="outline" size="sm" onClick={copySmiles}>Copy</Button>
+        <Button variant="outline" size="sm" onClick={copySmiles}>Copy SMILES</Button>
+        <div className="relative">
+          <Button variant="outline" size="sm" onClick={() => setShowExport(!showExport)}>Export ▾</Button>
+          {showExport && (
+            <div className="absolute right-0 top-full mt-1 w-40 bg-slate-700 border border-slate-600 rounded-lg shadow-lg z-50">
+              {[
+                { label: 'MOL File', action: exportMOL },
+                { label: 'SDF File', action: exportSDF },
+                { label: 'InChI/Key', action: exportInChI },
+                { label: 'PNG Image', action: exportPNG },
+              ].map(item => (
+                <button key={item.label} onClick={() => { item.action(); setShowExport(false) }}
+                  className="w-full text-left px-3 py-2 text-xs text-white hover:bg-slate-600 rounded-t-lg first:rounded-t-lg last:rounded-b-lg">
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <Button variant="outline" size="sm" onClick={analyzeMolecule} disabled={loading}>
           {loading ? '...' : 'Analyze'}
         </Button>
         <Button variant="primary" size="sm" onClick={dockMolecule}>Dock</Button>
-        <Button variant="secondary" size="sm" onClick={optimizeMolecule}>AI</Button>
+        <Button variant="secondary" size="sm" onClick={optimizeMolecule}>AI Optimize</Button>
       </div>
 
       <div className="flex-1 flex overflow-hidden">
         <div className="w-72 bg-white border-r border-gray-200 flex flex-col overflow-y-auto">
-          {/* File Upload Section */}
           <div className="p-3 border-b border-gray-200">
             <div className="text-xs font-semibold text-gray-700 mb-2">📤 Upload Molecule File</div>
             <div className="space-y-2">
@@ -382,19 +555,40 @@ export function ChemDraw() {
           </div>
 
           <div className="p-3 border-b border-gray-200">
-            <div className="text-xs font-semibold text-gray-700 mb-2">Molecule Library</div>
-            <div className="grid grid-cols-2 gap-1">
-              {FDA_DRUGS.map(drug => (
-                <button
-                  key={drug.name}
-                  onClick={() => { loadExample(drug.name, drug.smiles); setMolName(drug.name); setLoadedFile(null); }}
-                  className="text-xs px-2 py-1.5 bg-gray-50 hover:bg-cyan-50 hover:text-cyan-700 border border-gray-200 rounded text-left transition-colors"
-                  title={drug.use}
-                >
-                  {drug.name}
-                </button>
-              ))}
-            </div>
+            <button onClick={() => setShowTemplates(!showTemplates)}
+              className="w-full text-left text-xs font-semibold text-gray-700 flex justify-between items-center">
+              <span>📚 Template Library ({FDA_DRUGS.length + HETEROCYCLES.length})</span>
+              <span>{showTemplates ? '▲' : '▼'}</span>
+            </button>
+            {showTemplates && (
+              <div className="mt-2">
+                <input type="text" placeholder="Search templates..." value={templateFilter}
+                  onChange={e => setTemplateFilter(e.target.value)}
+                  className="w-full px-2 py-1 text-xs border border-gray-300 rounded mb-2" />
+                <div className="text-xs font-medium text-gray-500 mb-1">FDA Drugs</div>
+                <div className="grid grid-cols-2 gap-1 mb-2">
+                  {FDA_DRUGS.map(drug => (
+                    <button key={drug.name}
+                      onClick={() => { loadExample(drug.name, drug.smiles); setMolName(drug.name); setLoadedFile(null); }}
+                      className="text-xs px-2 py-1.5 bg-gray-50 hover:bg-cyan-50 hover:text-cyan-700 border border-gray-200 rounded text-left transition-colors"
+                      title={drug.use}>
+                      {drug.name}
+                    </button>
+                  ))}
+                </div>
+                <div className="text-xs font-medium text-gray-500 mb-1">Heterocycles</div>
+                <div className="grid grid-cols-2 gap-1 max-h-40 overflow-y-auto">
+                  {filteredTemplates.map(t => (
+                    <button key={t.name}
+                      onClick={() => { loadExample(t.name, t.smiles); setMolName(t.name); }}
+                      className="text-xs px-2 py-1.5 bg-gray-50 hover:bg-purple-50 hover:text-purple-700 border border-gray-200 rounded text-left transition-colors"
+                      title={t.smiles}>
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="p-3 border-b border-gray-200">
@@ -443,6 +637,22 @@ export function ChemDraw() {
           </div>
 
           <div className="p-3 border-b border-gray-200">
+            <div className="text-xs font-semibold text-gray-700 mb-2">Identifiers</div>
+            <div className="space-y-2">
+              <div>
+                <button onClick={fetchIUPAC} className="text-xs text-blue-600 hover:underline">
+                  {iupacName ? `IUPAC: ${iupacName}` : 'Get IUPAC Name →'}
+                </button>
+              </div>
+              <div>
+                <button onClick={fetchInChI} className="text-xs text-blue-600 hover:underline">
+                  {inchiKey ? `InChIKey: ${inchiKey}` : 'Get InChI/InChIKey →'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-3 border-b border-gray-200">
             <div className="text-xs font-semibold text-gray-700 mb-2">Optimization</div>
             <div className="space-y-1">
               {MUTATION_STRATEGIES.map(s => (
@@ -480,8 +690,8 @@ export function ChemDraw() {
             <div className="flex-1 flex items-center justify-center bg-gray-900">
               <canvas
                 ref={canvas2dRef}
-                width={400}
-                height={300}
+                width={600}
+                height={400}
                 className="max-w-full max-h-full"
               />
             </div>
@@ -495,8 +705,8 @@ export function ChemDraw() {
 
           <div className="bg-slate-800 border-t border-slate-700 px-4 py-2">
             <div className="flex items-center justify-between text-xs text-gray-400">
-              <span>SMILES: {smiles}</span>
-              <span>Drag to rotate | Scroll to zoom</span>
+              <span className="truncate max-w-md">SMILES: {smiles}</span>
+              <span>Q: Cleanup | A: Analyze | Drag to rotate | Scroll to zoom</span>
             </div>
           </div>
         </div>

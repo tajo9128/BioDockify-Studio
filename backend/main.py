@@ -1246,6 +1246,140 @@ END
     return {"pdb": sample_pdb, "job_id": job_id, "sample": True}
 
 
+@app.post("/api/chem/cleanup")
+def api_chem_cleanup(req: Dict[str, Any]):
+    """Clean up SMILES: canonicalize, fix aromaticity, remove duplicates"""
+    smiles = req.get("smiles", "")
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import rdDepictor
+
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            return {"error": "Invalid SMILES"}
+
+        Chem.SanitizeMol(mol)
+        Chem.AssignStereochemistry(mol, force=True, flagPossibleStereoCenters=True)
+        clean_smiles = Chem.MolToSmiles(mol, isomericSmiles=True)
+
+        return {"original": smiles, "cleaned": clean_smiles}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/chem/iupac")
+def api_chem_iupac(req: Dict[str, Any]):
+    """Get IUPAC name via OPSIN API"""
+    smiles = req.get("smiles", "")
+    try:
+        import requests as http_req
+        resp = http_req.get(
+            f"https://opsin.ch.cam.ac.uk/opsin/{smiles}?format=json",
+            timeout=5
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            return {"iupac": data.get("iupac_name", "Name not found")}
+        return {"iupac": "Name not found"}
+    except Exception:
+        return {"iupac": "OPSIN unavailable"}
+
+
+@app.post("/api/chem/inchi")
+def api_chem_inchi(req: Dict[str, Any]):
+    """Convert SMILES to InChI and InChIKey"""
+    smiles = req.get("smiles", "")
+    try:
+        from rdkit import Chem
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            return {"error": "Invalid SMILES"}
+        inchi = Chem.MolToInchi(mol)
+        inchi_key = Chem.MolToInchiKey(mol)
+        return {"inchi": inchi, "inchi_key": inchi_key}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/chem/conformers")
+def api_chem_conformers(req: Dict[str, Any]):
+    """Generate 3D conformers using ETKDG"""
+    smiles = req.get("smiles", "")
+    n_conf = req.get("n_conformers", 5)
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import AllChem
+
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            return {"error": "Invalid SMILES"}
+
+        mol = Chem.AddHs(mol)
+        params = AllChem.ETKDGv3()
+        params.randomSeed = 42
+        params.maxAttempts = 1000
+        params.numThreads = 0
+
+        n = AllChem.EmbedMultipleConfs(mol, n_conf, params)
+        energies = []
+        for i in range(n):
+            e = AllChem.MMFFOptimizeMolecule(mol, confId=i)
+            energies.append(round(float(e), 2))
+
+        best_conf = min(range(n), key=lambda i: energies[i])
+        mol_best = Chem.Mol(mol, confId=best_conf)
+        pdb = Chem.MolToPDBBlock(mol_best)
+
+        return {
+            "n_conformers": n,
+            "energies": energies,
+            "best_conf": best_conf,
+            "pdb": pdb
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/chem/to-mol")
+def api_chem_to_mol(req: Dict[str, Any]):
+    """Convert SMILES to MOL file (2D coordinates)"""
+    smiles = req.get("smiles", "")
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import rdDepictor
+
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            return {"error": "Invalid SMILES"}
+
+        rdDepictor.Compute2DCoords(mol)
+        mol_block = Chem.MolToMolBlock(mol)
+        return {"mol_block": mol_block}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/chem/to-3d")
+def api_chem_to_3d(req: Dict[str, Any]):
+    """Convert SMILES to 3D PDB with MMFF optimization"""
+    smiles = req.get("smiles", "")
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import AllChem
+
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            return {"error": "Invalid SMILES"}
+
+        mol = Chem.AddHs(mol)
+        AllChem.EmbedMolecule(mol, randomSeed=42)
+        AllChem.MMFFOptimizeMolecule(mol)
+        pdb = Chem.MolToPDBBlock(mol)
+        return {"pdb": pdb}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/api/stats")
 def api_stats():
     """Get system statistics"""
