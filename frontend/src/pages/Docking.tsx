@@ -919,6 +919,13 @@ END`
                   <th className="pb-2">Vina</th>
                   <th className="pb-2">GNINA</th>
                   <th className="pb-2">RF</th>
+                  <th className="pb-2">Hydrophobic</th>
+                  <th className="pb-2">Rotatable</th>
+                  <th className="pb-2">Lipo</th>
+                  <th className="pb-2">Composite</th>
+                  {selectedJob?.results?.some((r: DockingResult) => r.constraint_penalty) && (
+                    <th className="pb-2">Constraint</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -928,11 +935,18 @@ END`
                     <td className="py-2 font-mono">{r.vina_score?.toFixed(2)}</td>
                     <td className="py-2 font-mono">{r.gnina_score?.toFixed(2) || '-'}</td>
                     <td className="py-2 font-mono">{r.rf_score?.toFixed(2) || '-'}</td>
+                    <td className="py-2 font-mono">{r.hydrophobic_term?.toFixed(3) || '-'}</td>
+                    <td className="py-2 font-mono">{r.rotatable_penalty?.toFixed(3) || '-'}</td>
+                    <td className="py-2 font-mono">{r.lipo_contact?.toFixed(3) || '-'}</td>
+                    <td className="py-2 font-mono font-bold">{(r.final_score ?? r.composite_score ?? r.vina_score)?.toFixed(3)}</td>
+                    {selectedJob?.results?.some((r: DockingResult) => r.constraint_penalty) && (
+                      <td className="py-2 font-mono">{r.constraint_penalty?.toFixed(3) || '-'}</td>
+                    )}
                   </tr>
                 ))}
                 {(!selectedJob?.results || selectedJob.results.length === 0) && (
                   <tr>
-                    <td colSpan={4} className="py-4 text-center text-gray-500">No results</td>
+                    <td colSpan={9} className="py-4 text-center text-gray-500">No results</td>
                   </tr>
                 )}
               </tbody>

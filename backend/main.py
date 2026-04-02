@@ -1801,6 +1801,67 @@ def api_rdkit_prepare(req: Dict[str, Any]):
         return {"success": False, "error": str(e)}
 
 
+class BenchmarkRequest(BaseModel):
+    dataset_path: str
+    exhaustiveness: int = 8
+    num_modes: int = 9
+    enable_flexibility: bool = False
+
+
+@app.post("/api/benchmark/run")
+async def run_benchmark(request: BenchmarkRequest, background_tasks: BackgroundTasks):
+    """Run docking benchmark on PDBbind or custom dataset."""
+    import uuid
+    job_id = f"bench_{uuid.uuid4().hex[:8]}"
+
+    try:
+        create_job(job_uuid=job_id, job_name=f"benchmark_{job_id}", receptor_file="", ligand_file="", engine="benchmark")
+    except Exception:
+        pass
+
+    def benchmark_task():
+        try:
+            update_job_status(job_id, "running")
+            from benchmarking import run_pdbbind_benchmark
+            results = run_pdbbind_benchmark(
+                pdbbind_dir=request.dataset_path,
+                output_file=f"{STORAGE_DIR}/benchmarks/{job_id}/report.json",
+                docking_params={
+                    'exhaustiveness': request.exhaustiveness,
+                    'num_modes': request.num_modes,
+                    'enable_flexibility': request.enable_flexibility,
+                }
+            )
+            update_job_status(job_id, "completed", metadata={
+                'rmsd_summary': results.get('rmsd_summary'),
+                'enrichment_metrics': results.get('enrichment_metrics'),
+                'success_rate': results['successful_dockings'] / max(1, results['total_complexes'])
+            })
+        except Exception as e:
+            logger.error(f"Benchmark failed: {e}")
+            update_job_status(job_id, "failed", error=str(e))
+
+    background_tasks.add_task(benchmark_task)
+
+    return {"job_id": job_id, "status": "queued", "message": "Benchmark job started"}
+
+
+@app.get("/api/benchmark/results/{job_id}")
+def get_benchmark_results(job_id: str):
+    """Retrieve benchmark results."""
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+
+    report_path = f"{STORAGE_DIR}/benchmarks/{job_id}/report.json"
+    if Path(report_path).exists():
+        with open(report_path) as f:
+            results = json.load(f)
+        return {"job_id": job_id, "status": job.status, "results": results}
+
+    return {"job_id": job_id, "status": job.status, "progress": getattr(job, 'progress', 0)}
+
+
 @app.get("/{path:path}")
 async def serve_spa(path: str):
     """
