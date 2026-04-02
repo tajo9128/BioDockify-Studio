@@ -894,7 +894,8 @@ def smart_dock(
     size_z: float = 20.0,
     exhaustiveness: int = 32,
     num_modes: int = 10,
-    output_dir: str = "/tmp"
+    output_dir: str = "/tmp",
+    enable_flexibility: bool = False
 ) -> Dict[str, Any]:
     """
     Smart Docking Pipeline with RDKit-only preparation:
@@ -1036,16 +1037,50 @@ def smart_dock(
     
     logger.info("[SmartDock] STEP 3: Running initial Vina scan...")
     
-    vina_result = run_vina_docking(
-        receptor_pdbqt or ligand_pdbqt,
-        ligand_pdbqt,
-        center_x, center_y, center_z,
-        size_x, size_y, size_z,
-        exhaustiveness, min(num_modes, 5),
-        output_dir
-    )
+    receptor_ensemble = [receptor_content] if receptor_content else [None]
     
-    if vina_result["success"]:
+    if enable_flexibility and receptor_content and ligand_prep_result and ligand_prep_result.get('mol'):
+        try:
+            from flexibility import generate_flexible_receptor_ensemble
+            logger.info("[SmartDock] Generating flexible receptor ensemble...")
+            receptor_ensemble = generate_flexible_receptor_ensemble(
+                receptor_content, ligand_prep_result['mol']
+            )
+            logger.info(f"[SmartDock] Generated {len(receptor_ensemble)} receptor conformations")
+            pipeline["pipeline_stages"].append({
+                "stage": "flexibility",
+                "status": "completed",
+                "details": f"{len(receptor_ensemble)} conformations"
+            })
+        except Exception as e:
+            logger.warning(f"[SmartDock] Flexibility failed ({e}), using rigid receptor")
+    
+    all_results = []
+    
+    for conf_idx, receptor_conf in enumerate(receptor_ensemble):
+        if len(receptor_ensemble) > 1:
+            logger.info(f"[SmartDock] Docking conformation {conf_idx+1}/{len(receptor_ensemble)}")
+        
+        conf_pdbqt = None
+        if receptor_conf:
+            conf_pdbqt_result = prepare_protein_from_content(receptor_conf, output_dir)
+            if conf_pdbqt_result:
+                conf_pdbqt = conf_pdbqt_result['pdbqt_path']
+            else:
+                continue
+        
+        vina_result = run_vina_docking(
+            conf_pdbqt or receptor_pdbqt or ligand_pdbqt,
+            ligand_pdbqt,
+            center_x, center_y, center_z,
+            size_x, size_y, size_z,
+            exhaustiveness, min(num_modes, 5),
+            output_dir
+        )
+        
+        if not vina_result["success"]:
+            continue
+        
         pipeline["files"].update(vina_result.get("files", {}))
         results = vina_result.get("results", [])
         
@@ -1054,85 +1089,96 @@ def smart_dock(
         else:
             best_score = -5.0
         
-        pipeline["results"] = results if results else generate_simulated_results(num_modes)
-        pipeline["best_score"] = best_score
+        all_results.extend(results if results else generate_simulated_results(num_modes))
+    
+    if not all_results:
+        pipeline["success"] = False
+        pipeline["error"] = "All docking conformations failed"
+        pipeline["results"] = generate_simulated_results(num_modes)
+        pipeline["routing_decision"] = "simulated (all conformations failed)"
+        return pipeline
+    
+    all_results.sort(key=lambda x: x["vina_score"])
+    pipeline["results"] = all_results[:num_modes]
+    pipeline["best_score"] = min([r["vina_score"] for r in pipeline["results"]])
+    best_score = pipeline["best_score"]
+    
+    if best_score <= ENERGY_THRESHOLD:
+        logger.info(f"[SmartDock] Energy ({best_score:.2f}) <= {ENERGY_THRESHOLD} → Vina sufficient")
+        pipeline["routing_decision"] = f"VINA_ONLY (best: {best_score:.2f} <= {ENERGY_THRESHOLD})"
+        pipeline["engine_used"] = "vina"
         
-        if best_score <= ENERGY_THRESHOLD:
-            logger.info(f"[SmartDock] Energy ({best_score:.2f}) <= {ENERGY_THRESHOLD} → Vina sufficient")
-            pipeline["routing_decision"] = f"VINA_ONLY (best: {best_score:.2f} <= {ENERGY_THRESHOLD})"
-            pipeline["engine_used"] = "vina"
+        full_vina_result = run_vina_docking(
+            receptor_pdbqt or ligand_pdbqt,
+            ligand_pdbqt,
+            center_x, center_y, center_z,
+            size_x, size_y, size_z,
+            exhaustiveness, num_modes,
+            output_dir
+        )
+        
+        if full_vina_result["success"]:
+            pipeline["results"] = full_vina_result.get("results", pipeline["results"])
+            pipeline["files"].update(full_vina_result.get("files", {}))
+        
+        pipeline["pipeline_stages"].append({
+            "stage": "docking",
+            "status": "completed",
+            "details": f"Vina complete - best: {best_score:.2f} kcal/mol"
+        })
+        
+        pipeline["download_urls"] = {
+            "log_file": f"/download/{os.path.basename(pipeline['files'].get('log', ''))}",
+            "docking_file": f"/download/{os.path.basename(pipeline['files'].get('docking', ''))}",
+            "grid_file": f"/download/{os.path.basename(pipeline['files'].get('grid', ''))}"
+        }
+        if receptor_pdbqt:
+            pipeline["download_urls"]["receptor_file"] = f"/download/{os.path.basename(receptor_pdbqt)}"
+        if ligand_pdbqt:
+            pipeline["download_urls"]["ligand_file"] = f"/download/{os.path.basename(ligand_pdbqt)}"
+        
+    else:
+        logger.info(f"[SmartDock] Energy ({best_score:.2f}) > {ENERGY_THRESHOLD} → GNINA + RF required")
+        pipeline["routing_decision"] = f"GNINA_RF (best: {best_score:.2f} > {ENERGY_THRESHOLD})"
+        pipeline["engine_used"] = "vina_then_gnina"
+        
+        gnina_result = run_gnina_docking(
+            receptor_pdbqt or ligand_pdbqt,
+            ligand_pdbqt,
+            center_x, center_y, center_z,
+            size_x, size_y, size_z,
+            exhaustiveness, num_modes,
+            output_dir
+        )
+        
+        if gnina_result["success"]:
+            pipeline["results"] = gnina_result.get("results", pipeline["results"])
+            pipeline["files"].update(gnina_result.get("files", {}))
             
-            full_vina_result = run_vina_docking(
-                receptor_pdbqt or ligand_pdbqt,
-                ligand_pdbqt,
-                center_x, center_y, center_z,
-                size_x, size_y, size_z,
-                exhaustiveness, num_modes,
-                output_dir
-            )
-            
-            if full_vina_result["success"]:
-                pipeline["results"] = full_vina_result.get("results", pipeline["results"])
-                pipeline["files"].update(full_vina_result.get("files", {}))
-            
-            pipeline["pipeline_stages"].append({
-                "stage": "docking",
-                "status": "completed",
-                "details": f"Vina complete - best: {best_score:.2f} kcal/mol"
-            })
-            
-            pipeline["download_urls"] = {
-                "log_file": f"/download/{os.path.basename(pipeline['files'].get('log', ''))}",
-                "docking_file": f"/download/{os.path.basename(pipeline['files'].get('docking', ''))}",
-                "grid_file": f"/download/{os.path.basename(pipeline['files'].get('grid', ''))}"
-            }
-            if receptor_pdbqt:
-                pipeline["download_urls"]["receptor_file"] = f"/download/{os.path.basename(receptor_pdbqt)}"
-            if ligand_pdbqt:
-                pipeline["download_urls"]["ligand_file"] = f"/download/{os.path.basename(ligand_pdbqt)}"
-            
-        else:
-            logger.info(f"[SmartDock] Energy ({best_score:.2f}) > {ENERGY_THRESHOLD} → GNINA + RF required")
-            pipeline["routing_decision"] = f"GNINA_RF (best: {best_score:.2f} > {ENERGY_THRESHOLD})"
-            pipeline["engine_used"] = "vina_then_gnina"
-            
-            gnina_result = run_gnina_docking(
-                receptor_pdbqt or ligand_pdbqt,
-                ligand_pdbqt,
-                center_x, center_y, center_z,
-                size_x, size_y, size_z,
-                exhaustiveness, num_modes,
-                output_dir
-            )
-            
-            if gnina_result["success"]:
-                pipeline["results"] = gnina_result.get("results", pipeline["results"])
-                pipeline["files"].update(gnina_result.get("files", {}))
-                
-                if vina_result["files"].get("log"):
-                    pipeline["files"]["vina_log"] = vina_result["files"]["log"]
-                if vina_result["files"].get("docking"):
-                    pipeline["files"]["vina_docking"] = vina_result["files"]["docking"]
-            
-            pipeline["pipeline_stages"].append({
-                "stage": "docking",
-                "status": "completed",
-                "details": f"GNINA + RF complete - best: {best_score:.2f} kcal/mol"
-            })
-            
-            pipeline["download_urls"] = {
-                "log_file": f"/download/{os.path.basename(pipeline['files'].get('log', ''))}",
-                "docking_file": f"/download/{os.path.basename(pipeline['files'].get('docking', ''))}",
-                "grid_file": f"/download/{os.path.basename(pipeline['files'].get('grid', ''))}",
-                "vina_log": f"/download/{os.path.basename(pipeline['files'].get('vina_log', pipeline['files'].get('log', '')))}",
-                "vina_docking": f"/download/{os.path.basename(pipeline['files'].get('vina_docking', pipeline['files'].get('docking', '')))}",
-                "gnina_log": f"/download/{os.path.basename(pipeline['files'].get('log', ''))}",
-                "gnina_docking": f"/download/{os.path.basename(pipeline['files'].get('docking', ''))}"
-            }
-            if receptor_pdbqt:
-                pipeline["download_urls"]["receptor_file"] = f"/download/{os.path.basename(receptor_pdbqt)}"
-            if ligand_pdbqt:
-                pipeline["download_urls"]["ligand_file"] = f"/download/{os.path.basename(ligand_pdbqt)}"
+            if vina_result["files"].get("log"):
+                pipeline["files"]["vina_log"] = vina_result["files"]["log"]
+            if vina_result["files"].get("docking"):
+                pipeline["files"]["vina_docking"] = vina_result["files"]["docking"]
+        
+        pipeline["pipeline_stages"].append({
+            "stage": "docking",
+            "status": "completed",
+            "details": f"GNINA + RF complete - best: {best_score:.2f} kcal/mol"
+        })
+        
+        pipeline["download_urls"] = {
+            "log_file": f"/download/{os.path.basename(pipeline['files'].get('log', ''))}",
+            "docking_file": f"/download/{os.path.basename(pipeline['files'].get('docking', ''))}",
+            "grid_file": f"/download/{os.path.basename(pipeline['files'].get('grid', ''))}",
+            "vina_log": f"/download/{os.path.basename(pipeline['files'].get('vina_log', pipeline['files'].get('log', '')))}",
+            "vina_docking": f"/download/{os.path.basename(pipeline['files'].get('vina_docking', pipeline['files'].get('docking', '')))}",
+            "gnina_log": f"/download/{os.path.basename(pipeline['files'].get('log', ''))}",
+            "gnina_docking": f"/download/{os.path.basename(pipeline['files'].get('docking', ''))}"
+        }
+        if receptor_pdbqt:
+            pipeline["download_urls"]["receptor_file"] = f"/download/{os.path.basename(receptor_pdbqt)}"
+        if ligand_pdbqt:
+            pipeline["download_urls"]["ligand_file"] = f"/download/{os.path.basename(ligand_pdbqt)}"
     else:
         pipeline["success"] = False
         pipeline["error"] = vina_result.get("error", "Vina docking failed")

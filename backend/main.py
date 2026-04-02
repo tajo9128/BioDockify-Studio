@@ -885,6 +885,7 @@ class DockingRunRequest(BaseModel):
     num_modes: int = 10
     scoring: str = "vina"
     receptor_id: Optional[str] = None
+    enable_flexibility: bool = False
 
 
 @app.post("/api/docking/run")
@@ -953,7 +954,8 @@ def api_docking_run(req: DockingRunRequest):
             size_z=req.size_z,
             exhaustiveness=req.exhaustiveness,
             num_modes=req.num_modes,
-            output_dir=STORAGE_DIR
+            output_dir=STORAGE_DIR,
+            enable_flexibility=req.enable_flexibility
         )
         
         logger.info(f"[Docking] Pipeline stages: {[s['stage'] for s in docking_result.get('pipeline_stages', [])]}")

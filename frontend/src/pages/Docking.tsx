@@ -58,6 +58,7 @@ export function Docking() {
   const [exhaustiveness, setExhaustiveness] = useState(32)
   const [numModes, setNumModes] = useState(10)
   const [scoringFunction, setScoringFunction] = useState<'vina' | 'gnina' | 'rf'>('vina')
+  const [enableFlexibility, setEnableFlexibility] = useState(false)
   
   // Processing state
   const [isProcessing, setIsProcessing] = useState(false)
@@ -288,7 +289,8 @@ END`
           size_z: gridConfig.size_z,
           exhaustiveness,
           num_modes: numModes,
-          scoring: scoringFunction
+          scoring: scoringFunction,
+          enable_flexibility: enableFlexibility
         })
       })
       
@@ -543,6 +545,28 @@ END`
             {error}
           </div>
         )}
+        
+        <div className={`p-3 rounded-lg border ${isDark ? 'border-gray-600 bg-gray-800' : 'border-gray-200 bg-gray-50'}`}>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={enableFlexibility}
+              onChange={e => setEnableFlexibility(e.target.checked)}
+              className="w-5 h-5 text-cyan-600 rounded"
+            />
+            <div>
+              <p className="font-medium text-sm">Enable Side-Chain Flexibility</p>
+              <p className="text-xs text-gray-500">
+                Generates multiple receptor conformations for better binding poses
+              </p>
+            </div>
+          </label>
+          {enableFlexibility && (
+            <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-700">
+              ⚠️ Runtime will increase 3-27x. Estimated: ~{Math.ceil(exhaustiveness * numModes * 3 / 60)}-{Math.ceil(exhaustiveness * numModes * 27 / 60)} min
+            </div>
+          )}
+        </div>
         
         <button
           onClick={startDocking}
