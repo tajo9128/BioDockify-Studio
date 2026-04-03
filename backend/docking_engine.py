@@ -216,14 +216,14 @@ def prepare_protein_from_content(
                     pdb_lines.append(line)
 
         clean_pdb = "\n".join(pdb_lines)
-        mol = Chem.MolFromPDBBlock(clean_pdb, flavor=4)
+        mol = Chem.MolFromPDBBlock(clean_pdb, sanitize=False, removeHs=False)
 
         if mol is None:
             logger.error("Failed to parse protein PDB")
             return None
 
         try:
-            mol = Chem.AddHs(mol, addCoords=True)
+            mol = Chem.AddHs(mol, addCoords=False)
         except Exception as e:
             logger.warning(f"AddHs failed ({e}), proceeding without hydrogens")
 
