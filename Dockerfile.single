@@ -27,8 +27,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 libsm6 libxml2 libxslt1.1 libxrender1 libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
+# Install GNINA CLI from GitHub release
+RUN wget -q https://github.com/gnina/gnina/releases/download/v1.0.3/gnina -O /usr/local/bin/gnina \
+    && chmod +x /usr/local/bin/gnina
+
 RUN pip install --no-cache-dir \
     rdkit-pypi==2022.9.5 \
+    vina>=1.2.5 \
     fastapi==0.109.2 \
     uvicorn[standard]==0.27.1 \
     python-multipart==0.0.9 \
