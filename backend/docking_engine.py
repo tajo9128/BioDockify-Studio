@@ -278,12 +278,21 @@ def mol_to_pdbqt(mol, is_ligand: bool = True) -> str:
             pdbqt_lines.append(line)
 
         pdbqt_lines.append("ENDROOT")
-        pdbqt_lines.append("BRANCH 1 1")
 
+        # Count actual rotatable bonds for TORSDOF
+        num_rotatable = 0
         for bond in mol.GetBonds():
             if bond.GetBondType() == Chem.rdchem.BondType.SINGLE:
-                pdbqt_lines.append("TORSDOF 1")
-                break
+                # Skip bonds to terminal atoms (hydrogens, halogens)
+                a1 = bond.GetBeginAtom()
+                a2 = bond.GetEndAtom()
+                if a1.GetDegree() > 1 and a2.GetDegree() > 1:
+                    # Skip amide bonds (C-N in peptide)
+                    if not (a1.GetAtomicNum() == 6 and a2.GetAtomicNum() == 7 and 
+                            any(n.GetSymbol() == 'O' for n in a1.GetNeighbors())):
+                        num_rotatable += 1
+        
+        pdbqt_lines.append(f"TORSDOF {num_rotatable}")
 
     else:
         conf = mol.GetConformer(0)
