@@ -183,12 +183,17 @@ class LLMRouter:
     """
 
     def __init__(self):
-        self.ollama = OllamaProvider()
+        self._config = _load_config()
+        # Use model from saved config if provider is ollama
+        saved_model = self._config.get("model") if self._config.get("provider") == "ollama" else None
+        saved_url = self._config.get("base_url") if self._config.get("provider") == "ollama" else None
+        # Strip /v1 suffix from URL if present (OllamaProvider adds /v1 itself for chat)
+        ollama_base = (saved_url.rstrip("/").removesuffix("/v1") if saved_url else None) or OLLAMA_URL
+        self.ollama = OllamaProvider(url=ollama_base, model=saved_model or OLLAMA_MODEL)
         self.offline = OfflineAssistant()
         self._provider = None
         self._api_provider = None
-        self._config = _load_config()
-        logger.info("LLMRouter initialized")
+        logger.info(f"LLMRouter initialized (ollama url={ollama_base}, model={self.ollama.model})")
 
     def _get_config_provider(self) -> str:
         return self._config.get("provider", "ollama")
@@ -329,6 +334,11 @@ class LLMRouter:
         self._provider = None
         self._api_provider = None
         self._config = _load_config()
+        # Re-init OllamaProvider with updated model/url from config
+        saved_model = self._config.get("model") if self._config.get("provider") == "ollama" else None
+        saved_url = self._config.get("base_url") if self._config.get("provider") == "ollama" else None
+        ollama_base = (saved_url.rstrip("/").removesuffix("/v1") if saved_url else None) or OLLAMA_URL
+        self.ollama = OllamaProvider(url=ollama_base, model=saved_model or OLLAMA_MODEL)
 
 
 def get_router() -> LLMRouter:

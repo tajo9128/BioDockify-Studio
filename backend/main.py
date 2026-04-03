@@ -1833,69 +1833,118 @@ def get_docking_status(job_id: str):
 
 @app.get("/gpu/status")
 def get_gpu_status():
-    """Get GPU status using nvidia-smi (cross-platform: Linux, macOS, Windows)"""
+    """Get GPU status - works inside Docker with GPU passthrough and on bare metal"""
     import subprocess
     import shutil
     import platform as _platform
 
+    # Search for nvidia-smi in all common locations (PATH + Windows + Linux Docker)
     nvidia_smi_cmd = shutil.which("nvidia-smi")
-    if not nvidia_smi_cmd and _platform.system() == "Windows":
-        for candidate in [
+    if not nvidia_smi_cmd:
+        candidates = [
+            # Linux / Docker with GPU passthrough
+            "/usr/bin/nvidia-smi",
+            "/usr/local/bin/nvidia-smi",
+            "/usr/local/cuda/bin/nvidia-smi",
+            # Windows
             r"C:\Windows\System32\nvidia-smi.exe",
             r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe",
             r"C:\Program Files\NVIDIA Corporation\nvidia-smi.exe",
-        ]:
+        ]
+        for candidate in candidates:
             if os.path.isfile(candidate):
                 nvidia_smi_cmd = candidate
                 break
 
-    if nvidia_smi_cmd:
+    def _run_nvidia_smi(cmd):
         try:
             result = subprocess.run(
-                [
-                    nvidia_smi_cmd,
-                    "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu",
-                    "--format=csv,noheader,nounits",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=10,
+                [cmd, "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu",
+                 "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=10,
             )
             if result.returncode == 0:
-                lines = result.stdout.strip().split("\n")
                 gpus = []
-                for line in lines:
+                for line in result.stdout.strip().split("\n"):
                     parts = [p.strip() for p in line.split(",")]
                     if len(parts) >= 6:
-                        gpus.append(
-                            {
+                        try:
+                            gpus.append({
                                 "index": int(parts[0]),
                                 "name": parts[1],
                                 "utilization": int(parts[2]),
                                 "memory_used": int(parts[3]),
                                 "memory_total": int(parts[4]),
                                 "temperature": int(parts[5]),
-                            }
-                        )
+                            })
+                        except (ValueError, IndexError):
+                            continue
+                return gpus
+        except Exception as e:
+            logger.warning(f"nvidia-smi query failed: {e}")
+        return None
+
+    if nvidia_smi_cmd:
+        gpus = _run_nvidia_smi(nvidia_smi_cmd)
+        if gpus is not None:
+            return {
+                "available": True,
+                "gpus": gpus,
+                "recommended_pipeline": "vina_gpu",
+                "vina_available": check_vina(),
+                "gnina_available": check_gnina(),
+                "note": f"GPU detected ({len(gpus)} device(s)) - AutoDock Vina GPU will be used for fast docking",
+                "detection_method": "nvidia-smi",
+            }
+    else:
+        logger.info("nvidia-smi not found in PATH or common locations")
+
+    # Fallback: detect GPU via Python libraries
+    gpu_name = None
+    try:
+        import torch
+        if torch.cuda.is_available():
+            gpu_name = torch.cuda.get_device_name(0)
+            vram = torch.cuda.get_device_properties(0).total_memory // (1024 * 1024)
+            return {
+                "available": True,
+                "gpus": [{"index": 0, "name": gpu_name, "memory_total": vram,
+                           "memory_used": 0, "utilization": 0, "temperature": 0}],
+                "recommended_pipeline": "vina_gpu",
+                "vina_available": check_vina(),
+                "gnina_available": check_gnina(),
+                "note": f"GPU detected via PyTorch: {gpu_name}",
+                "detection_method": "torch",
+            }
+    except ImportError:
+        pass
+    except Exception as e:
+        logger.warning(f"PyTorch GPU detection failed: {e}")
+
+    # Fallback: check /proc/driver/nvidia/gpus (Linux)
+    try:
+        nvidia_gpus_dir = "/proc/driver/nvidia/gpus"
+        if os.path.isdir(nvidia_gpus_dir):
+            gpu_dirs = os.listdir(nvidia_gpus_dir)
+            if gpu_dirs:
                 return {
                     "available": True,
-                    "gpus": gpus,
+                    "gpus": [{"index": i, "name": "NVIDIA GPU", "memory_total": 0,
+                               "memory_used": 0, "utilization": 0, "temperature": 0}
+                             for i in range(len(gpu_dirs))],
                     "recommended_pipeline": "vina_gpu",
                     "vina_available": check_vina(),
                     "gnina_available": check_gnina(),
-                    "note": f"GPU detected ({len(gpus)} device(s)) - AutoDock Vina GPU will be used for fast docking",
+                    "note": f"{len(gpu_dirs)} NVIDIA GPU(s) detected via /proc/driver/nvidia",
+                    "detection_method": "proc",
                 }
-        except FileNotFoundError:
-            pass
-        except Exception as e:
-            logger.warning(f"GPU detection error: {e}")
-    else:
-        logger.info("nvidia-smi not found in PATH or common Windows locations")
+    except Exception:
+        pass
 
     return {
         "available": False,
         "gpus": [],
-        "message": "No GPU detected",
+        "message": "No GPU detected. Ensure Docker is started with --gpus all (NVIDIA Container Toolkit required).",
         "recommended_pipeline": "gnina_rf" if check_vina() else "simulated",
         "vina_available": check_vina(),
         "gnina_available": check_gnina(),
