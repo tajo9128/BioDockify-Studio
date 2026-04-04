@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Layout } from '@/components/Layout'
 import { Dashboard } from '@/pages/Dashboard'
 import { Docking } from '@/pages/Docking'
+import { BatchDocking } from '@/pages/BatchDocking'
 import { LigandDesigner } from '@/pages/LigandDesigner'
 import { JobQueue } from '@/pages/JobQueue'
 import { Results } from '@/pages/Results'
@@ -27,6 +28,7 @@ export default function App() {
           <Route path="/ligand-designer" element={<LigandDesigner />} />
           <Route path="/ligand-modifier" element={<LigandModifier />} />
           <Route path="/docking" element={<Docking />} />
+          <Route path="/batch-docking" element={<BatchDocking />} />
           <Route path="/jobs" element={<JobQueue />} />
           <Route path="/results" element={<Results />} />
           <Route path="/rmsd" element={<RMSDAnalysis />} />

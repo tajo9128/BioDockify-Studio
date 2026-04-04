@@ -1724,3 +1724,356 @@ def detect_binding_site(
             "size_y": 20,
             "size_z": 20,
         }
+
+
+# ============================================================
+# Batch Docking Pipeline
+# ============================================================
+
+def compute_descriptors(smiles: str) -> Dict[str, Any]:
+    """Compute RDKit molecular descriptors for a SMILES string."""
+    from rdkit import Chem
+    from rdkit.Chem import Descriptors, Lipinski, rdMolDescriptors
+
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return {"error": "Invalid SMILES"}
+
+    heavy = mol.GetNumHeavyAtoms()
+    mw = Descriptors.MolWt(mol)
+    logp = Descriptors.MolLogP(mol)
+    hbd = Lipinski.NumHDonors(mol)
+    hba = Lipinski.NumHAcceptors(mol)
+    tpsa = rdMolDescriptors.CalcTPSA(mol)
+    rot = Descriptors.NumRotatableBonds(mol)
+
+    return {
+        "heavy_atoms": heavy,
+        "mw": round(mw, 2),
+        "logp": round(logp, 2),
+        "hbd": hbd,
+        "hba": hba,
+        "tpsa": round(tpsa, 2),
+        "rot_bonds": rot,
+        "ligand_efficiency": 0.0,  # computed after docking
+    }
+
+
+def compute_composite_score(result: Dict) -> float:
+    """Compute composite score: Vina + GNINA + RF + LE + lipophilic."""
+    vina = result.get("vina_score") or 0
+    gnina = result.get("gnina_score") or vina
+    rf = result.get("rf_score") or vina
+    le = result.get("ligand_efficiency", 0)
+    lipo = result.get("lipo_contact", 0)
+
+    # Lower is better (negative scores)
+    score = (0.4 * vina + 0.3 * gnina + 0.15 * rf +
+             0.1 * le + 0.05 * lipo)
+    return round(score, 3)
+
+
+def compute_tanimoto(smiles1: str, smiles2: str) -> float:
+    """Compute Tanimoto similarity between two SMILES using Morgan fingerprints."""
+    from rdkit import Chem
+    from rdkit import DataStructs
+    from rdkit.Chem import rdFingerprintGenerator
+
+    m1 = Chem.MolFromSmiles(smiles1)
+    m2 = Chem.MolFromSmiles(smiles2)
+    if m1 is None or m2 is None:
+        return 0.0
+
+    gen = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
+    fp1 = gen.GetFingerprint(m1)
+    fp2 = gen.GetFingerprint(m2)
+    return DataStructs.TanimotoSimilarity(fp1, fp2)
+
+
+def filter_diversity(ligands: List[Dict], threshold: float = 0.85, top_n: int = 5) -> List[Dict]:
+    """Filter ligands by Tanimoto similarity to ensure diverse top results."""
+    selected = []
+    for lig in ligands:
+        smiles = lig.get("smiles", "")
+        is_diverse = True
+        for sel in selected:
+            sim = compute_tanimoto(smiles, sel.get("smiles", ""))
+            if sim >= threshold:
+                is_diverse = False
+                lig["diversity_note"] = f"Similar to rank {sel.get('rank', '?')} (Tanimoto: {sim:.2f})"
+                break
+        if is_diverse:
+            lig["is_diverse"] = True
+            selected.append(lig)
+        else:
+            lig["is_diverse"] = False
+        if len(selected) >= top_n:
+            break
+    return selected
+
+
+def batch_dock(
+    receptor_content: str,
+    smiles_list: List[str],
+    grid_config: Dict[str, float],
+    mode: str = "accurate",
+    batch_size: int = 50,
+    max_vina_workers: int = 4,
+    max_gnina_workers: int = 2,
+    output_dir: str = "/tmp",
+    progress_callback=None,
+) -> Dict[str, Any]:
+    """
+    Batch docking pipeline with hybrid filtering and diversity ranking.
+
+    Pipeline:
+    1. RDKit descriptors for all ligands
+    2. Batch split into chunks of batch_size
+    3. Vina (parallel, max_vina_workers)
+    4. Hybrid filter: score <= -7.0 OR top 20, capped at 30
+    5. GNINA (parallel, max_gnina_workers) — only if mode="accurate"
+    6. Composite score computation
+    7. Tanimoto diversity filtering
+    8. Return top 5 diverse ligands + full ranked table
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import threading
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Validate SMILES upfront
+    valid_ligands = []
+    errors = []
+    for idx, smi in enumerate(smiles_list):
+        smi = smi.strip()
+        if not smi:
+            continue
+        desc = compute_descriptors(smi)
+        if desc.get("error"):
+            errors.append({"index": idx, "smiles": smi, "error": desc["error"]})
+        else:
+            valid_ligands.append({
+                "index": idx,
+                "smiles": smi,
+                **desc,
+            })
+
+    total = len(valid_ligands)
+    if total == 0:
+        return {
+            "success": False,
+            "error": "No valid SMILES provided",
+            "errors": errors,
+        }
+
+    # Check available engines
+    vina_available = check_vina() or check_vina_cli()
+    gnina_available = check_gnina() and mode == "accurate"
+
+    if not vina_available:
+        return {
+            "success": False,
+            "error": "Vina not available",
+            "errors": errors,
+        }
+
+    gpu_info = check_gpu_cuda()
+    progress = {
+        "stage": "vina",
+        "vina_done": 0,
+        "vina_total": total,
+        "gnina_done": 0,
+        "gnina_total": 0,
+        "total_ligands": total,
+        "errors": len(errors),
+    }
+
+    def _report():
+        if progress_callback:
+            progress_callback(dict(progress))
+
+    # Step 1: Vina docking (parallel)
+    vina_results = []
+    vina_lock = threading.Lock()
+
+    def _dock_single(lig):
+        try:
+            result = smart_dock(
+                receptor_content=receptor_content,
+                ligand_content=lig["smiles"],
+                input_format="smiles",
+                center_x=grid_config.get("center_x", 0),
+                center_y=grid_config.get("center_y", 0),
+                center_z=grid_config.get("center_z", 0),
+                size_x=grid_config.get("size_x", 20),
+                size_y=grid_config.get("size_y", 20),
+                size_z=grid_config.get("size_z", 20),
+                exhaustiveness=8,
+                num_modes=9,
+                output_dir=output_dir,
+            )
+            if result.get("success") and result.get("results"):
+                best = result["results"][0]
+                lig["vina_score"] = best.get("vina_score")
+                lig["vina_mode"] = best.get("mode")
+                lig["vina_files"] = result.get("files", {})
+                lig["vina_success"] = True
+            else:
+                lig["vina_score"] = None
+                lig["vina_success"] = False
+                lig["vina_error"] = result.get("error", "Unknown error")
+        except Exception as e:
+            lig["vina_score"] = None
+            lig["vina_success"] = False
+            lig["vina_error"] = str(e)
+
+        with vina_lock:
+            progress["vina_done"] += 1
+            _report()
+
+    logger.info(f"[BatchDock] Starting Vina docking for {total} ligands ({max_vina_workers} workers)")
+    with ThreadPoolExecutor(max_workers=max_vina_workers) as executor:
+        futures = [executor.submit(_dock_single, lig) for lig in valid_ligands]
+        for f in as_completed(futures):
+            f.result()  # catch any unexpected exceptions
+
+    # Collect Vina results
+    vina_done = [lig for lig in valid_ligands if lig.get("vina_success")]
+    vina_failed = [lig for lig in valid_ligands if not lig.get("vina_success")]
+    progress["errors"] += len(vina_failed)
+
+    if not vina_done:
+        return {
+            "success": False,
+            "error": "All Vina docking attempts failed",
+            "errors": errors + [{"smiles": l["smiles"], "error": l.get("vina_error", "Failed")} for l in vina_failed],
+        }
+
+    # Rank by Vina score
+    vina_done.sort(key=lambda x: x.get("vina_score") or 999)
+
+    # Step 2: Hybrid filter for GNINA
+    selected_for_gnina = []
+    for i, lig in enumerate(vina_done):
+        score = lig.get("vina_score") or 999
+        if score <= VINA_THRESHOLD or i < TOP_N_FOR_GNINA:
+            selected_for_gnina.append(lig)
+        if len(selected_for_gnina) >= MAX_GNINA_INPUT:
+            break
+
+    progress["gnina_total"] = len(selected_for_gnina)
+    _report()
+
+    logger.info(f"[BatchDock] Vina complete. Filtered {len(vina_done)} → {len(selected_for_gnina)} for GNINA")
+
+    # Step 3: GNINA refinement (if accurate mode)
+    if gnina_available and selected_for_gnina:
+        gnina_lock = threading.Lock()
+
+        def _gnina_single(lig):
+            try:
+                result = run_gnina_docking(
+                    receptor_pdbqt=None,  # will be regenerated
+                    ligand_pdbqt=None,
+                    center_x=grid_config.get("center_x", 0),
+                    center_y=grid_config.get("center_y", 0),
+                    center_z=grid_config.get("center_z", 0),
+                    size_x=grid_config.get("size_x", 20),
+                    size_y=grid_config.get("size_y", 20),
+                    size_z=grid_config.get("size_z", 20),
+                    exhaustiveness=8,
+                    num_modes=9,
+                    output_dir=output_dir,
+                )
+                if result.get("success") and result.get("results"):
+                    best = result["results"][0]
+                    lig["gnina_score"] = best.get("gnina_score") or best.get("vina_score")
+                    lig["rf_score"] = best.get("rf_score")
+                    lig["gnina_success"] = True
+                else:
+                    lig["gnina_score"] = lig.get("vina_score")
+                    lig["rf_score"] = None
+                    lig["gnina_success"] = False
+            except Exception as e:
+                lig["gnina_score"] = lig.get("vina_score")
+                lig["rf_score"] = None
+                lig["gnina_success"] = False
+                lig["gnina_error"] = str(e)
+
+            with gnina_lock:
+                progress["gnina_done"] += 1
+                _report()
+
+        logger.info(f"[BatchDock] Starting GNINA for {len(selected_for_gnina)} ligands ({max_gnina_workers} workers)")
+        progress["stage"] = "gnina"
+        _report()
+
+        with ThreadPoolExecutor(max_workers=max_gnina_workers) as executor:
+            futures = [executor.submit(_gnina_single, lig) for lig in selected_for_gnina]
+            for f in as_completed(futures):
+                f.result()
+
+        # Mark non-selected ligands as not GNINA-tested
+        for lig in vina_done:
+            if lig not in selected_for_gnina:
+                lig["gnina_score"] = None
+                lig["rf_score"] = None
+                lig["gnina_success"] = False
+                lig["gnina_reason"] = "Not selected (filtered out)"
+    else:
+        # Fast mode or no GNINA — all ligands keep Vina scores only
+        for lig in vina_done:
+            lig["gnina_score"] = None
+            lig["rf_score"] = None
+            lig["gnina_success"] = False
+
+    # Step 4: Compute composite scores and ligand efficiency
+    for lig in vina_done:
+        vina = lig.get("vina_score") or 0
+        gnina = lig.get("gnina_score") or vina
+        rf = lig.get("rf_score") or vina
+        heavy = lig.get("heavy_atoms", 1)
+
+        # Ligand efficiency: -score / heavy_atoms (higher = better)
+        le = -vina / heavy if heavy > 0 else 0
+        lig["ligand_efficiency"] = round(le, 3)
+
+        # Composite score
+        composite = (0.4 * vina + 0.3 * (gnina or vina) + 0.15 * (rf or vina) +
+                     0.1 * le + 0.05 * 0)  # lipo_contact not computed in batch
+        lig["composite_score"] = round(composite, 3)
+
+    # Step 5: Final ranking by composite score (lower = better)
+    vina_done.sort(key=lambda x: x.get("composite_score") or 999)
+
+    # Assign ranks
+    for i, lig in enumerate(vina_done):
+        lig["rank"] = i + 1
+
+    # Step 6: Diversity filtering for top 5
+    top_candidates = list(vina_done[:20])  # consider top 20 for diversity
+    top_5 = filter_diversity(top_candidates, threshold=0.85, top_n=5)
+
+    # Mark top 5
+    for lig in top_5:
+        lig["is_top5"] = True
+
+    progress["stage"] = "completed"
+    _report()
+
+    logger.info(f"[BatchDock] Complete. Top 5 diverse ligands selected from {total}")
+
+    return {
+        "success": True,
+        "total_ligands": total,
+        "vina_completed": len(vina_done),
+        "gnina_completed": len([l for l in vina_done if l.get("gnina_success")]),
+        "errors": len(errors) + len(vina_failed),
+        "top_5": top_5,
+        "all_results": vina_done,
+        "errors_detail": errors + [{"smiles": l["smiles"], "error": l.get("vina_error", "Failed")} for l in vina_failed],
+        "gpu_info": gpu_info,
+        "mode": mode,
+        "filter_threshold": VINA_THRESHOLD,
+        "filter_top_n": TOP_N_FOR_GNINA,
+    }

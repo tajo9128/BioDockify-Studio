@@ -4128,55 +4128,194 @@ class BatchDockingRequest(BaseModel):
     size_x: float = 20
     size_y: float = 20
     size_z: float = 20
-    exhaustiveness: int = 32
-    num_modes: int = 10
+    exhaustiveness: int = 8
+    num_modes: int = 9
+    mode: str = "accurate"  # "fast" | "accurate"
+    batch_size: int = 50
+
+
+# In-memory batch job store
+BATCH_JOBS: Dict[str, Dict[str, Any]] = {}
 
 
 @app.post("/batch/docking")
-def batch_docking(request: BatchDockingRequest):
+def batch_docking(request: BatchDockingRequest, bg_tasks: BackgroundTasks):
     """
     Run batch docking for a library of compounds.
-    Returns job_id for tracking.
+    Returns job_id for tracking. Runs in background thread.
     """
-    job_id = str(uuid.uuid4())
+    job_id = f"batch_{uuid.uuid4().hex[:8]}"
 
-    create_job(
-        job_name=f"batch_docking_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-        receptor_file="uploaded",
-        ligand_file="batch",
-        engine="vina",
-        status="pending",
-        binding_energy=None,
-        num_poses=len(request.smiles_list),
-    )
+    # Validate input
+    if not request.receptor_content.strip():
+        raise HTTPException(400, "Receptor content is required")
+    if not request.smiles_list:
+        raise HTTPException(400, "SMILES list is empty")
+    if len(request.smiles_list) > 100:
+        raise HTTPException(400, "Maximum 100 ligands per batch")
+
+    BATCH_JOBS[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "stage": "queued",
+        "vina_done": 0,
+        "vina_total": len(request.smiles_list),
+        "gnina_done": 0,
+        "gnina_total": 0,
+        "total_ligands": len(request.smiles_list),
+        "errors": 0,
+        "top_5": [],
+        "all_results": [],
+        "errors_detail": [],
+        "created_at": datetime.now().isoformat(),
+    }
+
+    bg_tasks.add_task(_run_batch_docking, job_id, request)
 
     return {
         "job_id": job_id,
-        "status": "pending",
+        "status": "queued",
         "total_ligands": len(request.smiles_list),
         "message": f"Batch docking job created for {len(request.smiles_list)} ligands",
-        "estimated_time_minutes": len(request.smiles_list) * 2,
     }
+
+
+def _run_batch_docking(job_id: str, request: BatchDockingRequest):
+    """Run batch docking in background thread."""
+    from docking_engine import batch_dock
+
+    job = BATCH_JOBS.get(job_id)
+    if not job:
+        return
+
+    job["status"] = "running"
+    job["stage"] = "starting"
+
+    def _progress_cb(progress: Dict):
+        if job:
+            job.update(progress)
+            job["status"] = "running"
+            if progress.get("stage") == "completed":
+                job["status"] = "completed"
+
+    try:
+        import tempfile
+        output_dir = tempfile.mkdtemp(prefix="batch_dock_")
+
+        result = batch_dock(
+            receptor_content=request.receptor_content,
+            smiles_list=request.smiles_list,
+            grid_config={
+                "center_x": request.center_x,
+                "center_y": request.center_y,
+                "center_z": request.center_z,
+                "size_x": request.size_x,
+                "size_y": request.size_y,
+                "size_z": request.size_z,
+            },
+            mode=request.mode,
+            batch_size=request.batch_size,
+            output_dir=output_dir,
+            progress_callback=_progress_cb,
+        )
+
+        if result.get("success"):
+            job["status"] = "completed"
+            job["stage"] = "completed"
+            job["top_5"] = result.get("top_5", [])
+            job["all_results"] = result.get("all_results", [])
+            job["errors_detail"] = result.get("errors_detail", [])
+            job["vina_completed"] = result.get("vina_completed", 0)
+            job["gnina_completed"] = result.get("gnina_completed", 0)
+            job["gpu_info"] = result.get("gpu_info", {})
+            job["filter_threshold"] = result.get("filter_threshold", -7.0)
+            job["filter_top_n"] = result.get("filter_top_n", 20)
+            job["mode"] = result.get("mode", "accurate")
+        else:
+            job["status"] = "failed"
+            job["stage"] = "failed"
+            job["error"] = result.get("error", "Unknown error")
+            job["errors_detail"] = result.get("errors", [])
+
+    except Exception as e:
+        job["status"] = "failed"
+        job["stage"] = "failed"
+        job["error"] = str(e)
+        logger.exception(f"Batch docking job {job_id} failed")
 
 
 @app.get("/batch/docking/{job_id}/progress")
 def batch_docking_progress(job_id: str):
-    """
-    Get progress of batch docking job.
-    """
-    job = get_job(job_id)
+    """Get stage-based progress of batch docking job."""
+    job = BATCH_JOBS.get(job_id)
     if not job:
-        return {"error": "Job not found"}
+        raise HTTPException(404, "Job not found")
+
+    total = job.get("total_ligands", 1)
+    vina_done = job.get("vina_done", 0)
+    gnina_done = job.get("gnina_done", 0)
+    gnina_total = job.get("gnina_total", 0)
+
+    # Overall progress: Vina is 60% of work, GNINA is 40%
+    vina_pct = (vina_done / total) * 60 if total > 0 else 0
+    gnina_pct = (gnina_done / max(gnina_total, 1)) * 40 if gnina_total > 0 else 0
+    overall = round(vina_pct + gnina_pct, 1)
 
     return {
         "job_id": job_id,
         "status": job.get("status"),
-        "total": job.get("num_poses", 0),
-        "completed": job.get("num_completed", 0),
-        "progress_percent": round(
-            job.get("num_completed", 0) / max(job.get("num_poses", 1), 1) * 100, 1
-        ),
+        "stage": job.get("stage", "queued"),
+        "vina_done": vina_done,
+        "vina_total": job.get("vina_total", total),
+        "gnina_done": gnina_done,
+        "gnina_total": gnina_total,
+        "total_ligands": total,
+        "errors": job.get("errors", 0),
+        "progress_percent": overall,
     }
+
+
+@app.get("/batch/docking/{job_id}/results")
+def batch_docking_results(job_id: str):
+    """Get full results of completed batch docking job."""
+    job = BATCH_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+
+    if job.get("status") != "completed":
+        return {
+            "job_id": job_id,
+            "status": job.get("status"),
+            "message": f"Job is {job.get('status')}, results not yet available",
+        }
+
+    return {
+        "job_id": job_id,
+        "status": "completed",
+        "total_ligands": job.get("total_ligands", 0),
+        "vina_completed": job.get("vina_completed", 0),
+        "gnina_completed": job.get("gnina_completed", 0),
+        "errors": job.get("errors", 0),
+        "top_5": job.get("top_5", []),
+        "all_results": job.get("all_results", []),
+        "errors_detail": job.get("errors_detail", []),
+        "gpu_info": job.get("gpu_info", {}),
+        "mode": job.get("mode", "accurate"),
+        "filter_threshold": job.get("filter_threshold", -7.0),
+        "filter_top_n": job.get("filter_top_n", 20),
+    }
+
+
+@app.delete("/batch/docking/{job_id}")
+def batch_docking_cancel(job_id: str):
+    """Cancel a batch docking job."""
+    job = BATCH_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    if job.get("status") in ("completed", "failed"):
+        return {"message": "Job already finished"}
+    job["status"] = "cancelled"
+    return {"message": "Job cancelled"}
 
 
 # ============================================================
