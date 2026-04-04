@@ -16,16 +16,26 @@ class OfflineAssistant:
     """
 
     KNOWLEDGE_BASE = {
+        "identity": {
+            "keywords": [
+                "who are you",
+                "what are you",
+                "what is your name",
+                "who am i talking to",
+                "introduce yourself",
+                "what is nanobot",
+            ],
+            "response": "I am BioDockify AI, also known as NanoBot — the intelligent AI assistant built into BioDockify Studio AI. I'm powered by a CrewAI multi-agent system with 6 specialized AI agents at my command: a Molecular Docking Specialist, Computational Chemistry Expert, Pharmacophore Modeling Expert, ADMET Prediction Specialist, Drug Discovery Analysis Expert, and QSAR Modeling Specialist, all coordinated by a Drug Discovery Orchestrator. I'm here to help you with drug discovery!",
+        },
         "about": {
             "keywords": [
                 "what is biodockify",
                 "about biodockify",
                 "what can you do",
-                "what are you",
                 "about this software",
                 "about this app",
             ],
-            "response": "BioDockify Studio AI is a free, open-source alternative to BIOVIA Discovery Studio and Schrödinger. It includes molecular docking (Vina, GNINA, RF-Score), batch docking with composite scoring, pharmacophore modeling, QSAR modeling, ADMET prediction, molecular dynamics, ChemDraw, ligand modification, 3D visualization, RMSD analysis, interaction analysis, and AI-powered assistance via Ollama or cloud APIs.",
+            "response": "BioDockify Studio AI is a free, open-source alternative to BIOVIA Discovery Studio and Schrödinger. It includes molecular docking (Vina, GNINA, RF-Score), batch docking with composite scoring (GNINA 50% + LE 25% + QED 15% + diversity 10%), pharmacophore modeling, QSAR modeling, ADMET prediction, molecular dynamics, ChemDraw, ligand modification, 3D visualization, RMSD analysis, interaction analysis, and AI-powered assistance via Ollama or cloud APIs. I (NanoBot) coordinate a team of 6 CrewAI agents to help you with drug discovery tasks.",
         },
         "features": {
             "keywords": [
@@ -35,11 +45,32 @@ class OfflineAssistant:
                 "modules",
                 "tools",
             ],
-            "response": "BioDockify Studio AI includes: 1) Molecular Docking (Vina, GNINA, RF-Score), 2) Batch Docking (composite scoring with GNINA 50% + LE 25% + QED 15% + diversity 10%), 3) Pharmacophore Modeling, 4) QSAR Modeling (ML training with Y-scrambling), 5) ADMET Prediction, 6) Molecular Dynamics, 7) ChemDraw, 8) Ligand Modifier, 9) 3D Viewer (3Dmol.js), 10) RMSD Analysis, 11) Interaction Analysis, 12) AI Assistant (Ollama/OpenAI/DeepSeek), 13) CrewAI multi-agent orchestration, 14) Knowledge Graph integration.",
+            "response": "BioDockify Studio AI includes: 1) Molecular Docking (Vina, GNINA, RF-Score with smart energy-based routing), 2) Batch Docking (composite scoring with GNINA 50% + LE 25% + QED 15% + diversity 10%, SQLite cache, failed GNINA fallback), 3) Pharmacophore Modeling, 4) QSAR Modeling (ML training with Y-scrambling, SHAP analysis), 5) ADMET Prediction (Caco-2, BBB, CYP450, hERG, AMES), 6) Molecular Dynamics (OpenMM, GPU-accelerated), 7) ChemDraw (Ketcher), 8) Ligand Modifier (RDKit transformations), 9) 3D Viewer (3Dmol.js), 10) RMSD Analysis, 11) Interaction Analysis, 12) AI Assistant (NanoBot with CrewAI multi-agent system), 13) Knowledge Graph, 14) Natural Language Workflow compiler (NL-to-DAG).",
+        },
+        "crewai": {
+            "keywords": [
+                "crewai",
+                "crew",
+                "agents",
+                "multi-agent",
+                "team",
+                "orchestrator",
+            ],
+            "response": "BioDockify Studio AI uses CrewAI to coordinate a team of 6 specialized AI agents: 1) Molecular Docking Specialist (runs Vina/GNINA/RF with smart routing), 2) Computational Chemistry Expert (RDKit, SMILES, drug-likeness), 3) Pharmacophore Modeling Expert (structure/ligand-based pharmacophores), 4) ADMET Prediction Specialist (pharmacokinetics and toxicology), 5) Drug Discovery Analysis Expert (interactions, consensus scoring, ranking), 6) QSAR Modeling Specialist (descriptors, predictive modeling). All are coordinated by a Drug Discovery Orchestrator that delegates tasks and synthesizes results. The system supports pre-built workflows: Virtual Screening, Lead Optimization, ADMET Prediction, Docking Analysis, and full Drug Discovery pipelines.",
+        },
+        "nl": {
+            "keywords": [
+                "natural language",
+                "nl to dag",
+                "workflow",
+                "nl workflow",
+                "nl compiler",
+            ],
+            "response": "BioDockify Studio AI includes a Natural Language to DAG (Directed Acyclic Graph) compiler. You can describe what you want in plain English, and the system converts it into an executable workflow with automatic error diagnosis and self-healing recovery. The NL compiler parses your request, identifies the tools needed, builds a dependency graph, and executes steps in the correct order with retry logic.",
         },
         "vina": {
             "keywords": ["vina", "autodock", "binding affinity", "kcal/mol"],
-            "response": "AutoDock Vina calculates binding affinity in kcal/mol. More negative values indicate stronger predicted binding. Typical drug-like molecules bind with -5 to -12 kcal/mol. In BioDockify, Vina is used for initial screening — strong binders (≤-5.0) exit at Vina, weak binders proceed to GNINA+RF.",
+            "response": "AutoDock Vina calculates binding affinity in kcal/mol. More negative values indicate stronger predicted binding. Typical drug-like molecules bind with -5 to -12 kcal/mol. In BioDockify, Vina is used for initial screening — strong binders (≤-5.0) exit at Vina, weak binders proceed to GNINA+RF for full evaluation.",
         },
         "gnina": {
             "keywords": [
@@ -49,7 +80,7 @@ class OfflineAssistant:
                 "deep learning",
                 "neural network",
             ],
-            "response": "GNINA uses deep learning (CNN) to evaluate pose quality. CNN scores range from 0 to 1, where higher values indicate better predicted binding. In BioDockify, GNINA contributes 50% to the composite score in batch docking.",
+            "response": "GNINA uses deep learning (CNN) to evaluate pose quality. CNN scores range from 0 to 1, where higher values indicate better predicted binding. In BioDockify, GNINA contributes 50% to the composite score in batch docking. Failed GNINA runs fallback to 999.0 score.",
         },
         "rf": {
             "keywords": ["rf", "random forest", "score", "scoring"],
@@ -67,11 +98,11 @@ class OfflineAssistant:
                 "multiple ligands",
                 "virtual screening",
             ],
-            "response": "Batch docking in BioDockify screens multiple ligands against a single receptor. It uses composite scoring: GNINA CNN (50%) + Ligand Efficiency (25%) + QED drug-likeness (15%) + Tanimoto diversity (10%). Results are ranked and the top candidates are output with detailed reasons.",
+            "response": "Batch docking in BioDockify screens multiple ligands against a single receptor. It uses composite scoring: GNINA CNN (50%) + Ligand Efficiency (25%) + QED drug-likeness (15%) + Tanimoto diversity (10%). Results are cached in SQLite with composite primary keys. Failed GNINA runs fallback to 999.0. Diversity is calculated before scoring. Results include reasons for UI tooltips.",
         },
         "qsar": {
             "keywords": ["qsar", "machine learning", "train model", "predict"],
-            "response": "QSAR Modeling in BioDockify lets you train ML models (RandomForest, GradientBoosting, SVR, PLS, Ridge, Lasso) to predict molecular activity. Upload a CSV with SMILES and activity values, select descriptor groups, train the model, and predict new compounds. Includes Y-scrambling validation and SHAP importance analysis.",
+            "response": "QSAR Modeling in BioDockify lets you train ML models (RandomForest, GradientBoosting, SVR, PLS, Ridge, Lasso) to predict molecular activity. Upload a CSV with SMILES and activity values, select descriptor groups, train the model, and predict new compounds. Includes Y-scrambling validation, SHAP importance analysis, and applicability domain assessment.",
         },
         "admet": {
             "keywords": [
@@ -82,11 +113,11 @@ class OfflineAssistant:
                 "toxicity",
                 "drug-likeness",
             ],
-            "response": "ADMET prediction in BioDockify evaluates Absorption, Distribution, Metabolism, Excretion, and Toxicity of compounds. It uses rule-based and ML models to predict properties like Lipinski's Rule of Five, blood-brain barrier penetration, CYP450 inhibition, and hepatotoxicity.",
+            "response": "ADMET prediction in BioDockify evaluates Absorption, Distribution, Metabolism, Excretion, and Toxicity of compounds. It predicts Caco-2 permeability, BBB penetration, CYP450 inhibition (1A2, 2C9, 2D6, 3A4), hERG inhibition, AMES mutagenicity, and hepatotoxicity. Uses rule-based and ML models including Lipinski's Rule of Five, Veber, and Egan rules.",
         },
         "pharmacophore": {
             "keywords": ["pharmacophore", "feature", "hypothesis"],
-            "response": "Pharmacophore modeling in BioDockify identifies essential 3D arrangements of chemical features (H-bond donors/acceptors, hydrophobic regions, aromatic rings) required for biological activity. Supports both ligand-based and structure-based approaches.",
+            "response": "Pharmacophore modeling in BioDockify identifies essential 3D arrangements of chemical features (H-bond donors/acceptors, hydrophobic regions, aromatic rings) required for biological activity. Supports both ligand-based and structure-based approaches with library screening capabilities.",
         },
         "md": {
             "keywords": ["molecular dynamics", "md simulation", "trajectory", "openmm"],
@@ -131,7 +162,7 @@ class OfflineAssistant:
         },
         "help": {
             "keywords": ["help", "what can you", "commands"],
-            "response": "I can help with questions about: BioDockify Studio AI features, Vina scoring, GNINA CNN, Random Forest, consensus scoring, batch docking, QSAR modeling, ADMET, pharmacophores, molecular dynamics, hydrogen bonds, hydrophobic interactions, RMSD, binding pockets, grid parameters, exhaustiveness, and docking basics.",
+            "response": "I am NanoBot, your BioDockify AI assistant. I can help with: BioDockify Studio AI features, CrewAI multi-agent system, Vina scoring, GNINA CNN, Random Forest, consensus scoring, batch docking, QSAR modeling, ADMET, pharmacophores, molecular dynamics, hydrogen bonds, hydrophobic interactions, RMSD, binding pockets, grid parameters, exhaustiveness, and docking basics. I have 6 specialized AI agents ready to help with complex drug discovery tasks!",
         },
     }
 
