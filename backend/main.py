@@ -1307,9 +1307,7 @@ def api_ai_job_explain(req: JobExplainRequest):
 
     log_snippet = (row.get("log_text") or "")[:2000]
 
-    context = f"""You are BioDockify AI, an expert computational chemistry and drug discovery assistant built into BioDockify Studio AI — a free, open-source alternative to BIOVIA Discovery Studio and Schrödinger.
-
-About the software: BioDockify Studio AI includes molecular docking (Vina, GNINA, RF-Score), batch docking with composite scoring (GNINA 50% + LE 25% + QED 15% + diversity 10%), pharmacophore modeling, QSAR modeling, ADMET prediction, molecular dynamics, ChemDraw, ligand modification, 3D visualization, RMSD analysis, interaction analysis, and AI-powered assistance.
+    context = f"""You are BioDockify AI (NanoBot), an autonomous drug discovery brain built into BioDockify Studio AI. You have advanced AI capabilities: Experiment Memory (ChromaDB-backed), Meta-Parameter Self-Learning (per protein family), Active Learning + Bayesian Optimization, Adversarial Critique Agent, Knowledge Graph, NL-to-DAG Compiler, and 7 CrewAI agents coordinated by an Orchestrator.
 
 The user is asking about docking job ID: {req.job_id}
 Job name: {row.get("job_name")}

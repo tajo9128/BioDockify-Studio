@@ -17,10 +17,10 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 # Docking pipeline configuration
-VINA_THRESHOLD = -7.0       # Strong binder threshold (kcal/mol)
-TOP_N_FOR_GNINA = 20        # Always pass top N poses to GNINA
-MAX_GNINA_INPUT = 30        # Safety cap for GNINA input
-ENERGY_THRESHOLD = -5.0     # Legacy threshold (compatibility)
+VINA_THRESHOLD = -7.0  # Strong binder threshold (kcal/mol)
+TOP_N_FOR_GNINA = 20  # Always pass top N poses to GNINA
+MAX_GNINA_INPUT = 30  # Safety cap for GNINA input
+ENERGY_THRESHOLD = -5.0  # Legacy threshold (compatibility)
 
 
 def check_rdkit() -> bool:
@@ -275,6 +275,7 @@ def mol_to_pdbqt(mol, is_ligand: bool = True) -> str:
 def _mol_to_pdbqt_meeko(mol, is_ligand: bool = True) -> str:
     """Meeko-based PDBQT conversion — robust, handles atom types correctly."""
     from meeko import MoleculePreparation
+    from rdkit import Chem
     from rdkit.Chem import AllChem
 
     mol = Chem.AddHs(mol)
@@ -350,8 +351,11 @@ def _mol_to_pdbqt_rdkit(mol, is_ligand: bool = True) -> str:
                 a1 = bond.GetBeginAtom()
                 a2 = bond.GetEndAtom()
                 if a1.GetDegree() > 1 and a2.GetDegree() > 1:
-                    if not (a1.GetAtomicNum() == 6 and a2.GetAtomicNum() == 7 and
-                            any(n.GetSymbol() == 'O' for n in a1.GetNeighbors())):
+                    if not (
+                        a1.GetAtomicNum() == 6
+                        and a2.GetAtomicNum() == 7
+                        and any(n.GetSymbol() == "O" for n in a1.GetNeighbors())
+                    ):
                         num_rotatable += 1
 
         pdbqt_lines.append(f"TORSDOF {num_rotatable}")
@@ -383,13 +387,39 @@ def _validate_pdbqt(pdbqt_content: str) -> bool:
     Catches misplaced charges in the atom type field.
     """
     valid_types = {
-        'C', 'A', 'N', 'NA', 'OA', 'S', 'SA', 'P', 'F', 'CL', 'BR', 'I',
-        'HD', 'MG', 'CA', 'ZN', 'FE', 'CU', 'MN', 'K', 'NA', 'He', 'Li',
-        'Be', 'B', 'Ne', 'Al', 'Si', 'Se',
+        "C",
+        "A",
+        "N",
+        "NA",
+        "OA",
+        "S",
+        "SA",
+        "P",
+        "F",
+        "CL",
+        "BR",
+        "I",
+        "HD",
+        "MG",
+        "CA",
+        "ZN",
+        "FE",
+        "CU",
+        "MN",
+        "K",
+        "NA",
+        "He",
+        "Li",
+        "Be",
+        "B",
+        "Ne",
+        "Al",
+        "Si",
+        "Se",
     }
 
-    for line in pdbqt_content.split('\n'):
-        if not line.startswith(('ATOM', 'HETATM')):
+    for line in pdbqt_content.split("\n"):
+        if not line.startswith(("ATOM", "HETATM")):
             continue
         if len(line) < 78:
             continue
@@ -399,11 +429,20 @@ def _validate_pdbqt(pdbqt_content: str) -> bool:
         # Detect if charge was misplaced in atom type field
         if atom_type and atom_type not in valid_types:
             # Check if it looks like a charge value
-            cleaned = atom_type.replace('+', '').replace('-', '').replace('.', '').replace('0', '')
-            if cleaned == '' or atom_type in ('+0.000', '-0.000'):
-                logger.error(f"[PDBQT Validation] Charge '{atom_type}' in atom type field!")
+            cleaned = (
+                atom_type.replace("+", "")
+                .replace("-", "")
+                .replace(".", "")
+                .replace("0", "")
+            )
+            if cleaned == "" or atom_type in ("+0.000", "-0.000"):
+                logger.error(
+                    f"[PDBQT Validation] Charge '{atom_type}' in atom type field!"
+                )
                 return False
-            logger.warning(f"[PDBQT Validation] Unknown atom type '{atom_type}' (allowing)")
+            logger.warning(
+                f"[PDBQT Validation] Unknown atom type '{atom_type}' (allowing)"
+            )
 
     return True
 
@@ -764,12 +803,17 @@ DIMENSIONS = {int(size_x / 0.375)} x {int(size_y / 0.375)} x {int(size_z / 0.375
     if vina_available:
         try:
             # Validate PDBQT files BEFORE passing to Vina
-            for pdbqt_path, label in [(receptor_pdbqt, "receptor"), (ligand_pdbqt, "ligand")]:
+            for pdbqt_path, label in [
+                (receptor_pdbqt, "receptor"),
+                (ligand_pdbqt, "ligand"),
+            ]:
                 if os.path.exists(pdbqt_path):
                     with open(pdbqt_path, "r") as f:
                         content = f.read()
                     if not _validate_pdbqt(content):
-                        logger.error(f"[Vina] {label.capitalize()} PDBQT validation failed: {pdbqt_path}")
+                        logger.error(
+                            f"[Vina] {label.capitalize()} PDBQT validation failed: {pdbqt_path}"
+                        )
                         return {
                             "success": False,
                             "error": f"{label.capitalize()} PDBQT format invalid. Check logs for details.",
@@ -1422,10 +1466,12 @@ def smart_dock(
                             break
 
                 # Final ranking: sort by GNINA score (CNN), then by Vina as tiebreaker
-                gnina_results.sort(key=lambda x: (
-                    x.get("gnina_score") or 999,
-                    x.get("vina_score") or 999
-                ))
+                gnina_results.sort(
+                    key=lambda x: (
+                        x.get("gnina_score") or 999,
+                        x.get("vina_score") or 999,
+                    )
+                )
                 pipeline["results"] = gnina_results[:num_modes]
                 pipeline["files"].update(gnina_result.get("files", {}))
 
@@ -1469,19 +1515,29 @@ def smart_dock(
                 )
         else:
             logger.warning("[SmartDock] No poses selected for GNINA")
-            pipeline["routing_decision"] = f"VINA_ONLY (no poses met threshold {VINA_THRESHOLD} or top {TOP_N_FOR_GNINA})"
+            pipeline["routing_decision"] = (
+                f"VINA_ONLY (no poses met threshold {VINA_THRESHOLD} or top {TOP_N_FOR_GNINA})"
+            )
             pipeline["engine_used"] = "vina"
             pipeline["pipeline_stages"].append(
-                {"stage": "docking", "status": "completed", "details": f"Vina only, {len(all_results)} poses"}
+                {
+                    "stage": "docking",
+                    "status": "completed",
+                    "details": f"Vina only, {len(all_results)} poses",
+                }
             )
             pipeline["download_urls"] = {
                 "log_file": f"/download/{os.path.basename(vina_result.get('files', {}).get('log', ''))}",
                 "docking_file": f"/download/{os.path.basename(vina_result.get('files', {}).get('docking', ''))}",
             }
             if receptor_pdbqt:
-                pipeline["download_urls"]["receptor_file"] = f"/download/{os.path.basename(receptor_pdbqt)}"
+                pipeline["download_urls"]["receptor_file"] = (
+                    f"/download/{os.path.basename(receptor_pdbqt)}"
+                )
             if ligand_pdbqt:
-                pipeline["download_urls"]["ligand_file"] = f"/download/{os.path.basename(ligand_pdbqt)}"
+                pipeline["download_urls"]["ligand_file"] = (
+                    f"/download/{os.path.basename(ligand_pdbqt)}"
+                )
 
     else:
         # GNINA unavailable — Vina results only
@@ -1671,8 +1727,14 @@ def detect_binding_site(
                 continue
 
         if not ca_coords:
-            return {"center_x": 0, "center_y": 0, "center_z": 0,
-                    "size_x": 20, "size_y": 20, "size_z": 20}
+            return {
+                "center_x": 0,
+                "center_y": 0,
+                "center_z": 0,
+                "size_x": 20,
+                "size_y": 20,
+                "size_z": 20,
+            }
 
         coords = np.array(ca_coords)
 
@@ -1730,6 +1792,7 @@ def detect_binding_site(
 # Batch Docking Pipeline — Production-Grade
 # ============================================================
 
+
 def compute_descriptors(smiles: str) -> Dict[str, Any]:
     """Compute RDKit molecular descriptors + QED for a SMILES string."""
     from rdkit import Chem
@@ -1771,16 +1834,17 @@ def get_cached_result(smiles: str, method: str) -> Optional[dict]:
     """Retrieve cached docking result (composite PK: hash + type)."""
     import hashlib
     import sqlite3
+
     h = hashlib.sha256(smiles.encode()).hexdigest()[:16]
     try:
         os.makedirs("cache", exist_ok=True)
         conn = sqlite3.connect("cache/docking_cache.db")
         row = conn.execute(
-            "SELECT result FROM cache WHERE hash=? AND type=?",
-            (h, method)
+            "SELECT result FROM cache WHERE hash=? AND type=?", (h, method)
         ).fetchone()
         conn.close()
         import json
+
         return json.loads(row[0]) if row else None
     except Exception:
         return None
@@ -1791,6 +1855,7 @@ def cache_result(smiles: str, method: str, result: dict):
     import hashlib
     import sqlite3
     import json
+
     h = hashlib.sha256(smiles.encode()).hexdigest()[:16]
     try:
         os.makedirs("cache", exist_ok=True)
@@ -1802,7 +1867,7 @@ def cache_result(smiles: str, method: str, result: dict):
         )
         conn.execute(
             "INSERT OR REPLACE INTO cache (hash, type, result) VALUES (?, ?, ?)",
-            (h, method, json.dumps(result))
+            (h, method, json.dumps(result)),
         )
         conn.commit()
         conn.close()
@@ -1835,7 +1900,10 @@ def compute_composite_score(lig: Dict) -> float:
     div_bonus = lig.get("diversity_bonus", 0.0)
 
     # Weighted sum: 50% affinity, 25% efficiency, 15% QED, 10% diversity
-    return round((0.50 * gnina_norm) + (0.25 * le_norm) + (0.15 * qed_norm) + (0.10 * div_bonus), 4)
+    return round(
+        (0.50 * gnina_norm) + (0.25 * le_norm) + (0.15 * qed_norm) + (0.10 * div_bonus),
+        4,
+    )
 
 
 def generate_reasons(lig: Dict) -> List[str]:
@@ -1859,12 +1927,15 @@ def generate_reasons(lig: Dict) -> List[str]:
 def compute_tanimoto_fp(fp1, fp2) -> float:
     """Compute Tanimoto similarity between two RDKit fingerprints."""
     from rdkit import DataStructs
+
     if fp1 is None or fp2 is None:
         return 0.0
     return DataStructs.TanimotoSimilarity(fp1, fp2)
 
 
-def filter_diversity(ligands: List[Dict], threshold: float = 0.85, top_n: int = 5) -> List[Dict]:
+def filter_diversity(
+    ligands: List[Dict], threshold: float = 0.85, top_n: int = 5
+) -> List[Dict]:
     """Filter ligands by Tanimoto similarity to ensure diverse top results."""
     selected = []
     for lig in ligands:
@@ -1876,7 +1947,9 @@ def filter_diversity(ligands: List[Dict], threshold: float = 0.85, top_n: int = 
             sim = compute_tanimoto_fp(fp, sel.get("fp"))
             if sim >= threshold:
                 is_diverse = False
-                lig["diversity_note"] = f"Similar to rank {sel.get('rank', '?')} (Tanimoto: {sim:.2f})"
+                lig["diversity_note"] = (
+                    f"Similar to rank {sel.get('rank', '?')} (Tanimoto: {sim:.2f})"
+                )
                 break
         if is_diverse:
             lig["diversity_bonus"] = 0.1
@@ -1930,11 +2003,13 @@ def batch_dock(
         if desc.get("error"):
             errors.append({"index": idx, "smiles": smi, "error": desc["error"]})
         else:
-            valid_ligands.append({
-                "index": idx,
-                "smiles": smi,
-                **desc,
-            })
+            valid_ligands.append(
+                {
+                    "index": idx,
+                    "smiles": smi,
+                    **desc,
+                }
+            )
 
     total = len(valid_ligands)
     if total == 0:
@@ -2008,7 +2083,9 @@ def batch_dock(
             progress["vina_done"] += 1
             _report()
 
-    logger.info(f"[BatchDock] Starting Vina docking for {total} ligands ({max_vina_workers} workers)")
+    logger.info(
+        f"[BatchDock] Starting Vina docking for {total} ligands ({max_vina_workers} workers)"
+    )
     with ThreadPoolExecutor(max_workers=max_vina_workers) as executor:
         futures = [executor.submit(_dock_single, lig) for lig in valid_ligands]
         for f in as_completed(futures):
@@ -2023,7 +2100,11 @@ def batch_dock(
         return {
             "success": False,
             "error": "All Vina docking attempts failed",
-            "errors": errors + [{"smiles": l["smiles"], "error": l.get("vina_error", "Failed")} for l in vina_failed],
+            "errors": errors
+            + [
+                {"smiles": l["smiles"], "error": l.get("vina_error", "Failed")}
+                for l in vina_failed
+            ],
         }
 
     # Step 3: Hybrid filter for GNINA
@@ -2039,7 +2120,9 @@ def batch_dock(
     progress["gnina_total"] = len(selected_for_gnina)
     _report()
 
-    logger.info(f"[BatchDock] Vina complete. Filtered {len(vina_done)} → {len(selected_for_gnina)} for GNINA")
+    logger.info(
+        f"[BatchDock] Vina complete. Filtered {len(vina_done)} → {len(selected_for_gnina)} for GNINA"
+    )
 
     # Step 4: GNINA refinement (if accurate mode)
     if gnina_available and selected_for_gnina:
@@ -2073,13 +2156,19 @@ def batch_dock(
                 )
                 if result.get("success") and result.get("results"):
                     best = result["results"][0]
-                    lig["gnina_score"] = best.get("gnina_score") or best.get("vina_score")
+                    lig["gnina_score"] = best.get("gnina_score") or best.get(
+                        "vina_score"
+                    )
                     lig["rf_score"] = best.get("rf_score")
                     lig["gnina_success"] = True
-                    cache_result(lig["smiles"], "gnina", {
-                        "gnina_score": lig["gnina_score"],
-                        "rf_score": lig["rf_score"],
-                    })
+                    cache_result(
+                        lig["smiles"],
+                        "gnina",
+                        {
+                            "gnina_score": lig["gnina_score"],
+                            "rf_score": lig["rf_score"],
+                        },
+                    )
                 else:
                     lig["gnina_score"] = 999.0  # Failed → worst score
                     lig["rf_score"] = None
@@ -2096,12 +2185,16 @@ def batch_dock(
                 progress["gnina_done"] += 1
                 _report()
 
-        logger.info(f"[BatchDock] Starting GNINA for {len(selected_for_gnina)} ligands ({max_gnina_workers} workers)")
+        logger.info(
+            f"[BatchDock] Starting GNINA for {len(selected_for_gnina)} ligands ({max_gnina_workers} workers)"
+        )
         progress["stage"] = "gnina"
         _report()
 
         with ThreadPoolExecutor(max_workers=max_gnina_workers) as executor:
-            futures = [executor.submit(_gnina_single, lig) for lig in selected_for_gnina]
+            futures = [
+                executor.submit(_gnina_single, lig) for lig in selected_for_gnina
+            ]
             for f in as_completed(futures):
                 f.result()
 
@@ -2122,7 +2215,7 @@ def batch_dock(
     # Sort by GNINA score first to pick the best diverse set
     candidates_for_diversity = sorted(
         [l for l in vina_done if l.get("gnina_success")],
-        key=lambda x: x.get("gnina_score") or 999
+        key=lambda x: x.get("gnina_score") or 999,
     )
     if not candidates_for_diversity:
         candidates_for_diversity = sorted_vina[:20]  # fallback to Vina top 20
@@ -2168,7 +2261,11 @@ def batch_dock(
         "errors": len(errors) + len(vina_failed),
         "top_5": top_5,
         "all_results": vina_done,
-        "errors_detail": errors + [{"smiles": l["smiles"], "error": l.get("vina_error", "Failed")} for l in vina_failed],
+        "errors_detail": errors
+        + [
+            {"smiles": l["smiles"], "error": l.get("vina_error", "Failed")}
+            for l in vina_failed
+        ],
         "gpu_info": gpu_info,
         "mode": mode,
         "filter_threshold": VINA_THRESHOLD,
