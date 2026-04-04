@@ -292,7 +292,7 @@ def mol_to_pdbqt(mol, is_ligand: bool = True) -> str:
             line = (
                 f"HETATM{serial:>5d} {name:<4s} LIG A{(i // 9999) + 1:>4d}    "
                 f"{pos[0]:>8.3f}{pos[1]:>8.3f}{pos[2]:>8.3f}"
-                f"{1.00:>6.2f}{0.00:>6.2f}          {name:<2s}{charge:>+8.3f}"
+                f"{1.00:>6.2f}{0.00:>6.2f}          {name:<2s}{charge:>8.3f}"
             )
             pdbqt_lines.append(line)
 
@@ -325,7 +325,7 @@ def mol_to_pdbqt(mol, is_ligand: bool = True) -> str:
             line = (
                 f"ATOM  {serial:>5d} {name:<4s} PRO A{(i // 9999) + 1:>4d}    "
                 f"{pos[0]:>8.3f}{pos[1]:>8.3f}{pos[2]:>8.3f}"
-                f"{1.00:>6.2f}{0.00:>6.2f}          {ad_type:<2s}{charge:>+8.3f}"
+                f"{1.00:>6.2f}{0.00:>6.2f}          {ad_type:<2s}{charge:>8.3f}"
             )
             pdbqt_lines.append(line)
 
