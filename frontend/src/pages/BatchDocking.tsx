@@ -388,11 +388,11 @@ export function BatchDocking() {
                   <th className="px-4 py-3">SMILES</th>
                   <th className="px-4 py-3">MW</th>
                   <th className="px-4 py-3">LogP</th>
+                  <th className="px-4 py-3">QED</th>
                   <th className="px-4 py-3">Vina</th>
                   <th className="px-4 py-3">GNINA</th>
                   <th className="px-4 py-3">RF</th>
-                  <th className="px-4 py-3">LE</th>
-                  <th className="px-4 py-3">Composite</th>
+                  <th className="px-4 py-3">Final</th>
                   <th className="px-4 py-3">Actions</th>
                 </tr>
               </thead>
@@ -414,17 +414,26 @@ export function BatchDocking() {
                     <td className="px-4 py-3 font-mono text-xs max-w-xs truncate" title={lig.smiles}>{lig.smiles}</td>
                     <td className="px-4 py-3">{lig.mw ?? '-'}</td>
                     <td className="px-4 py-3">{lig.logp ?? '-'}</td>
+                    <td className="px-4 py-3">{lig.qed?.toFixed(2) ?? '-'}</td>
                     <td className={`px-4 py-3 font-medium ${lig.vina_score != null && lig.vina_score <= -7 ? 'text-green-600' : ''}`}>
                       {lig.vina_score?.toFixed(2) ?? '-'}
                     </td>
-                    <td className="px-4 py-3">{lig.gnina_score?.toFixed(2) ?? '-'}</td>
+                    <td className="px-4 py-3">{lig.gnina_score?.toFixed(2) ?? (lig.failed ? 'FAIL' : '-')}</td>
                     <td className="px-4 py-3">{lig.rf_score?.toFixed(2) ?? '-'}</td>
-                    <td className="px-4 py-3">{lig.ligand_efficiency?.toFixed(3) ?? '-'}</td>
-                    <td className="px-4 py-3 font-bold">{lig.composite_score?.toFixed(3) ?? '-'}</td>
+                    <td className="px-4 py-3 font-bold">{lig.final_score?.toFixed(3) ?? '-'}</td>
                     <td className="px-4 py-3">
-                      <button onClick={() => copySmiles(lig.smiles)} className="text-blue-600 hover:text-blue-800 text-xs">
-                        Copy
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => copySmiles(lig.smiles)} className="text-blue-600 hover:text-blue-800 text-xs">
+                          Copy
+                        </button>
+                        {lig.reasons && lig.reasons.length > 0 && (
+                          <span className="relative group cursor-help" title={lig.reasons.join(', ')}>
+                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -456,6 +465,12 @@ export function BatchDocking() {
             </div>
           </div>
         )}
+
+        {/* Pipeline info */}
+        <div className={`text-xs text-gray-400 p-3 rounded ${isDark ? 'bg-gray-800' : 'bg-gray-50'}`}>
+          Pipeline: Vina → Filter (≤{results.filter_threshold} OR top {results.filter_top_n}) → GNINA → Tanimoto diversity (0.85) → Top 5 by final score
+          {results.mode === 'fast' && ' (Fast mode: Vina only)'}
+        </div>
       </div>
     )
   }

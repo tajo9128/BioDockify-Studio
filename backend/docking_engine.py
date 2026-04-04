@@ -1727,13 +1727,13 @@ def detect_binding_site(
 
 
 # ============================================================
-# Batch Docking Pipeline
+# Batch Docking Pipeline — Production-Grade
 # ============================================================
 
 def compute_descriptors(smiles: str) -> Dict[str, Any]:
-    """Compute RDKit molecular descriptors for a SMILES string."""
+    """Compute RDKit molecular descriptors + QED for a SMILES string."""
     from rdkit import Chem
-    from rdkit.Chem import Descriptors, Lipinski, rdMolDescriptors
+    from rdkit.Chem import QED, Descriptors, Lipinski, rdMolDescriptors, AllChem
 
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
@@ -1746,6 +1746,13 @@ def compute_descriptors(smiles: str) -> Dict[str, Any]:
     hba = Lipinski.NumHAcceptors(mol)
     tpsa = rdMolDescriptors.CalcTPSA(mol)
     rot = Descriptors.NumRotatableBonds(mol)
+    qed = QED.qed(mol)
+
+    # Morgan fingerprint for diversity filtering
+    try:
+        fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048)
+    except Exception:
+        fp = None
 
     return {
         "heavy_atoms": heavy,
@@ -1755,38 +1762,105 @@ def compute_descriptors(smiles: str) -> Dict[str, Any]:
         "hba": hba,
         "tpsa": round(tpsa, 2),
         "rot_bonds": rot,
-        "ligand_efficiency": 0.0,  # computed after docking
+        "qed": round(qed, 3),
+        "fp": fp,  # kept in memory for diversity, removed before JSON serialization
     }
 
 
-def compute_composite_score(result: Dict) -> float:
-    """Compute composite score: Vina + GNINA + RF + LE + lipophilic."""
-    vina = result.get("vina_score") or 0
-    gnina = result.get("gnina_score") or vina
-    rf = result.get("rf_score") or vina
-    le = result.get("ligand_efficiency", 0)
-    lipo = result.get("lipo_contact", 0)
+def get_cached_result(smiles: str, method: str) -> Optional[dict]:
+    """Retrieve cached docking result (composite PK: hash + type)."""
+    import hashlib
+    import sqlite3
+    h = hashlib.sha256(smiles.encode()).hexdigest()[:16]
+    try:
+        os.makedirs("cache", exist_ok=True)
+        conn = sqlite3.connect("cache/docking_cache.db")
+        row = conn.execute(
+            "SELECT result FROM cache WHERE hash=? AND type=?",
+            (h, method)
+        ).fetchone()
+        conn.close()
+        import json
+        return json.loads(row[0]) if row else None
+    except Exception:
+        return None
 
-    # Lower is better (negative scores)
-    score = (0.4 * vina + 0.3 * gnina + 0.15 * rf +
-             0.1 * le + 0.05 * lipo)
-    return round(score, 3)
+
+def cache_result(smiles: str, method: str, result: dict):
+    """Cache docking result with correct schema."""
+    import hashlib
+    import sqlite3
+    import json
+    h = hashlib.sha256(smiles.encode()).hexdigest()[:16]
+    try:
+        os.makedirs("cache", exist_ok=True)
+        conn = sqlite3.connect("cache/docking_cache.db")
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS cache
+               (hash TEXT, type TEXT, result TEXT,
+                PRIMARY KEY (hash, type))"""
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO cache (hash, type, result) VALUES (?, ?, ?)",
+            (h, method, json.dumps(result))
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 
-def compute_tanimoto(smiles1: str, smiles2: str) -> float:
-    """Compute Tanimoto similarity between two SMILES using Morgan fingerprints."""
-    from rdkit import Chem
+def compute_composite_score(lig: Dict) -> float:
+    """
+    FINAL SCORING — Higher is better (ranking score).
+    Normalizes GNINA (-5 to -15 → 0 to 1), LE (0.2-0.4 → 0 to 1),
+    QED (0-1), and diversity bonus (0-1).
+    """
+    gnina_raw = lig.get("gnina_score")
+    if gnina_raw is None:
+        gnina_raw = lig.get("vina_score") or 0
+
+    # GNINA normalization: -15→1.0, -5→0.0
+    gnina_norm = max(0.0, min(1.0, (-gnina_raw - 5.0) / 10.0))
+
+    # Ligand efficiency: ideal ~0.3, range 0.2-0.4
+    heavy = lig.get("heavy_atoms", 1)
+    le = -gnina_raw / max(1, heavy)
+    le_norm = max(0.0, min(1.0, (le - 0.2) / 0.2))
+
+    # QED (drug-likeness)
+    qed_norm = lig.get("qed", 0.5)
+
+    # Diversity bonus
+    div_bonus = lig.get("diversity_bonus", 0.0)
+
+    # Weighted sum: 50% affinity, 25% efficiency, 15% QED, 10% diversity
+    return round((0.50 * gnina_norm) + (0.25 * le_norm) + (0.15 * qed_norm) + (0.10 * div_bonus), 4)
+
+
+def generate_reasons(lig: Dict) -> List[str]:
+    """Generate 'Why Selected' metadata for UI tooltips."""
+    reasons = []
+    if lig.get("final_score", 0) > 0.6:
+        reasons.append("Excellent composite score")
+    if (lig.get("gnina_score") or 0) < -8.0:
+        reasons.append("Strong binding affinity (GNINA)")
+    if lig.get("qed", 0) > 0.5:
+        reasons.append("Drug-like properties (QED)")
+    if lig.get("diversity_bonus", 0) > 0:
+        reasons.append("Scaffold diversity bonus")
+    if lig.get("failed"):
+        reasons.append("Calculation failed — fallback ranking")
+    if not reasons:
+        reasons.append("Passed hybrid filter")
+    return reasons
+
+
+def compute_tanimoto_fp(fp1, fp2) -> float:
+    """Compute Tanimoto similarity between two RDKit fingerprints."""
     from rdkit import DataStructs
-    from rdkit.Chem import rdFingerprintGenerator
-
-    m1 = Chem.MolFromSmiles(smiles1)
-    m2 = Chem.MolFromSmiles(smiles2)
-    if m1 is None or m2 is None:
+    if fp1 is None or fp2 is None:
         return 0.0
-
-    gen = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
-    fp1 = gen.GetFingerprint(m1)
-    fp2 = gen.GetFingerprint(m2)
     return DataStructs.TanimotoSimilarity(fp1, fp2)
 
 
@@ -1794,18 +1868,22 @@ def filter_diversity(ligands: List[Dict], threshold: float = 0.85, top_n: int = 
     """Filter ligands by Tanimoto similarity to ensure diverse top results."""
     selected = []
     for lig in ligands:
-        smiles = lig.get("smiles", "")
+        fp = lig.get("fp")
+        if fp is None:
+            continue
         is_diverse = True
         for sel in selected:
-            sim = compute_tanimoto(smiles, sel.get("smiles", ""))
+            sim = compute_tanimoto_fp(fp, sel.get("fp"))
             if sim >= threshold:
                 is_diverse = False
                 lig["diversity_note"] = f"Similar to rank {sel.get('rank', '?')} (Tanimoto: {sim:.2f})"
                 break
         if is_diverse:
+            lig["diversity_bonus"] = 0.1
             lig["is_diverse"] = True
             selected.append(lig)
         else:
+            lig["diversity_bonus"] = 0.0
             lig["is_diverse"] = False
         if len(selected) >= top_n:
             break
@@ -1824,16 +1902,16 @@ def batch_dock(
     progress_callback=None,
 ) -> Dict[str, Any]:
     """
-    Batch docking pipeline with hybrid filtering and diversity ranking.
+    Production-grade batch docking pipeline.
 
-    Pipeline:
-    1. RDKit descriptors for all ligands
-    2. Batch split into chunks of batch_size
-    3. Vina (parallel, max_vina_workers)
-    4. Hybrid filter: score <= -7.0 OR top 20, capped at 30
-    5. GNINA (parallel, max_gnina_workers) — only if mode="accurate"
-    6. Composite score computation
-    7. Tanimoto diversity filtering
+    Pipeline order:
+    1. Validate SMILES + compute descriptors (QED, fingerprints)
+    2. Vina (parallel, max_vina_workers)
+    3. Hybrid filter: score <= -7.0 OR top 20, capped at 30
+    4. GNINA (parallel, max_gnina_workers) — only if mode="accurate"
+    5. Tanimoto diversity filtering (BEFORE composite scoring)
+    6. Composite score computation (GNINA norm + LE + QED + diversity)
+    7. Final ranking by composite score (higher = better)
     8. Return top 5 diverse ligands + full ranked table
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -1841,7 +1919,7 @@ def batch_dock(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    # Validate SMILES upfront
+    # Step 1: Validate SMILES + compute descriptors (QED, fingerprints)
     valid_ligands = []
     errors = []
     for idx, smi in enumerate(smiles_list):
@@ -1892,8 +1970,7 @@ def batch_dock(
         if progress_callback:
             progress_callback(dict(progress))
 
-    # Step 1: Vina docking (parallel)
-    vina_results = []
+    # Step 2: Vina docking (parallel)
     vina_lock = threading.Lock()
 
     def _dock_single(lig):
@@ -1919,11 +1996,11 @@ def batch_dock(
                 lig["vina_files"] = result.get("files", {})
                 lig["vina_success"] = True
             else:
-                lig["vina_score"] = None
+                lig["vina_score"] = 0.0  # 0.0 means no binding
                 lig["vina_success"] = False
                 lig["vina_error"] = result.get("error", "Unknown error")
         except Exception as e:
-            lig["vina_score"] = None
+            lig["vina_score"] = 0.0
             lig["vina_success"] = False
             lig["vina_error"] = str(e)
 
@@ -1935,7 +2012,7 @@ def batch_dock(
     with ThreadPoolExecutor(max_workers=max_vina_workers) as executor:
         futures = [executor.submit(_dock_single, lig) for lig in valid_ligands]
         for f in as_completed(futures):
-            f.result()  # catch any unexpected exceptions
+            f.result()
 
     # Collect Vina results
     vina_done = [lig for lig in valid_ligands if lig.get("vina_success")]
@@ -1949,12 +2026,10 @@ def batch_dock(
             "errors": errors + [{"smiles": l["smiles"], "error": l.get("vina_error", "Failed")} for l in vina_failed],
         }
 
-    # Rank by Vina score
-    vina_done.sort(key=lambda x: x.get("vina_score") or 999)
-
-    # Step 2: Hybrid filter for GNINA
+    # Step 3: Hybrid filter for GNINA
+    sorted_vina = sorted(vina_done, key=lambda x: x.get("vina_score") or 999)
     selected_for_gnina = []
-    for i, lig in enumerate(vina_done):
+    for i, lig in enumerate(sorted_vina):
         score = lig.get("vina_score") or 999
         if score <= VINA_THRESHOLD or i < TOP_N_FOR_GNINA:
             selected_for_gnina.append(lig)
@@ -1966,14 +2041,25 @@ def batch_dock(
 
     logger.info(f"[BatchDock] Vina complete. Filtered {len(vina_done)} → {len(selected_for_gnina)} for GNINA")
 
-    # Step 3: GNINA refinement (if accurate mode)
+    # Step 4: GNINA refinement (if accurate mode)
     if gnina_available and selected_for_gnina:
         gnina_lock = threading.Lock()
 
         def _gnina_single(lig):
+            # Check cache first
+            cached = get_cached_result(lig["smiles"], "gnina")
+            if cached:
+                lig["gnina_score"] = cached.get("gnina_score")
+                lig["rf_score"] = cached.get("rf_score")
+                lig["gnina_success"] = True
+                with gnina_lock:
+                    progress["gnina_done"] += 1
+                    _report()
+                return
+
             try:
                 result = run_gnina_docking(
-                    receptor_pdbqt=None,  # will be regenerated
+                    receptor_pdbqt=None,
                     ligand_pdbqt=None,
                     center_x=grid_config.get("center_x", 0),
                     center_y=grid_config.get("center_y", 0),
@@ -1990,15 +2076,21 @@ def batch_dock(
                     lig["gnina_score"] = best.get("gnina_score") or best.get("vina_score")
                     lig["rf_score"] = best.get("rf_score")
                     lig["gnina_success"] = True
+                    cache_result(lig["smiles"], "gnina", {
+                        "gnina_score": lig["gnina_score"],
+                        "rf_score": lig["rf_score"],
+                    })
                 else:
-                    lig["gnina_score"] = lig.get("vina_score")
+                    lig["gnina_score"] = 999.0  # Failed → worst score
                     lig["rf_score"] = None
                     lig["gnina_success"] = False
+                    lig["failed"] = True
             except Exception as e:
-                lig["gnina_score"] = lig.get("vina_score")
+                lig["gnina_score"] = 999.0
                 lig["rf_score"] = None
                 lig["gnina_success"] = False
                 lig["gnina_error"] = str(e)
+                lig["failed"] = True
 
             with gnina_lock:
                 progress["gnina_done"] += 1
@@ -2013,7 +2105,7 @@ def batch_dock(
             for f in as_completed(futures):
                 f.result()
 
-        # Mark non-selected ligands as not GNINA-tested
+        # Mark non-selected ligands
         for lig in vina_done:
             if lig not in selected_for_gnina:
                 lig["gnina_score"] = None
@@ -2021,42 +2113,47 @@ def batch_dock(
                 lig["gnina_success"] = False
                 lig["gnina_reason"] = "Not selected (filtered out)"
     else:
-        # Fast mode or no GNINA — all ligands keep Vina scores only
         for lig in vina_done:
             lig["gnina_score"] = None
             lig["rf_score"] = None
             lig["gnina_success"] = False
 
-    # Step 4: Compute composite scores and ligand efficiency
+    # Step 5: Diversity filtering BEFORE composite scoring
+    # Sort by GNINA score first to pick the best diverse set
+    candidates_for_diversity = sorted(
+        [l for l in vina_done if l.get("gnina_success")],
+        key=lambda x: x.get("gnina_score") or 999
+    )
+    if not candidates_for_diversity:
+        candidates_for_diversity = sorted_vina[:20]  # fallback to Vina top 20
+
+    top_5 = filter_diversity(candidates_for_diversity, threshold=0.85, top_n=5)
+
+    # Step 6: Composite scoring (includes diversity bonus)
+    for lig in top_5:
+        lig["final_score"] = compute_composite_score(lig)
+        lig["reasons"] = generate_reasons(lig)
+
+    # Also score the rest for the full table
     for lig in vina_done:
-        vina = lig.get("vina_score") or 0
-        gnina = lig.get("gnina_score") or vina
-        rf = lig.get("rf_score") or vina
-        heavy = lig.get("heavy_atoms", 1)
+        if lig not in top_5:
+            lig["final_score"] = compute_composite_score(lig)
+            lig["reasons"] = generate_reasons(lig)
 
-        # Ligand efficiency: -score / heavy_atoms (higher = better)
-        le = -vina / heavy if heavy > 0 else 0
-        lig["ligand_efficiency"] = round(le, 3)
-
-        # Composite score
-        composite = (0.4 * vina + 0.3 * (gnina or vina) + 0.15 * (rf or vina) +
-                     0.1 * le + 0.05 * 0)  # lipo_contact not computed in batch
-        lig["composite_score"] = round(composite, 3)
-
-    # Step 5: Final ranking by composite score (lower = better)
-    vina_done.sort(key=lambda x: x.get("composite_score") or 999)
+    # Step 7: Final ranking by composite score (higher = better)
+    vina_done.sort(key=lambda x: x.get("final_score") or 0, reverse=True)
 
     # Assign ranks
     for i, lig in enumerate(vina_done):
         lig["rank"] = i + 1
 
-    # Step 6: Diversity filtering for top 5
-    top_candidates = list(vina_done[:20])  # consider top 20 for diversity
-    top_5 = filter_diversity(top_candidates, threshold=0.85, top_n=5)
-
     # Mark top 5
     for lig in top_5:
         lig["is_top5"] = True
+
+    # Clean up non-serializable objects before returning
+    for lig in vina_done:
+        lig.pop("fp", None)
 
     progress["stage"] = "completed"
     _report()
