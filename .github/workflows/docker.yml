@@ -48,11 +48,11 @@ jobs:
           file: ./Dockerfile.student
           push: true
           tags: |
-            tajo9128/biodockify-studio-ai:student-latest
+            tajo9128/biodockify-studio-se:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
       
       - name: Show pushed tags
         run: |
           echo "Docker image pushed:"
-          echo "  tajo9128/biodockify-studio-ai:student-latest"
+          echo "  tajo9128/biodockify-studio-se:latest"
