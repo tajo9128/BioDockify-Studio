@@ -89,9 +89,10 @@ export function QSARModeling() {
   async function loadDescriptorGroups() {
     try {
       const data = await getDescriptorGroups()
-      setDescriptorGroups(data.groups)
+      setDescriptorGroups(data?.groups || [])
     } catch (e) {
       console.warn('Could not load descriptor groups')
+      setDescriptorGroups([])
     }
   }
 
@@ -99,12 +100,14 @@ export function QSARModeling() {
     setModelsLoading(true)
     try {
       const data = await listModels()
-      setSavedModels(data.models)
-      if (data.models.length > 0 && !selectedModelId) {
-        setSelectedModelId(data.models[0].model_id)
+      const models = data?.models || []
+      setSavedModels(models)
+      if (models.length > 0 && !selectedModelId) {
+        setSelectedModelId(models[0].model_id)
       }
     } catch (e) {
       console.warn('Could not load models')
+      setSavedModels([])
     } finally {
       setModelsLoading(false)
     }
@@ -214,7 +217,7 @@ export function QSARModeling() {
   function downloadPredictions() {
     if (!bulkPredictions) return
     const csv = ['smiles,predicted_activity,ad_status'] +
-      bulkPredictions.map((p: any) => `${p.smiles},${p.predicted_activity ?? ''},${p.ad_status}`).join('\n')
+      bulkPredictions?.map((p: any) => `${p.smiles},${p.predicted_activity ?? ''},${p.ad_status}`).join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -277,7 +280,7 @@ export function QSARModeling() {
                 <div>
                   <label className="block text-sm font-medium text-text-secondary mb-1">Descriptor Groups</label>
                   <div className="flex flex-wrap gap-2">
-                    {descriptorGroups.map((g: string) => (
+                    {(descriptorGroups || []).map((g: string) => (
                       <label key={g} className="flex items-center gap-1 text-sm text-gray-300 cursor-pointer">
                         <input
                           type="checkbox"
@@ -597,7 +600,7 @@ export function QSARModeling() {
                     </Button>
                   </div>
                   <div className="max-h-80 overflow-y-auto space-y-1">
-                    {bulkPredictions.map((p: any, i: number) => (
+                    {(bulkPredictions || []).map((p: any, i: number) => (
                       <div key={i} className="flex justify-between items-center bg-gray-800 rounded px-3 py-2 text-sm">
                         <span className="text-gray-300 font-mono truncate flex-1 mr-3">{p.smiles}</span>
                         <span className="text-white font-mono mr-3">
@@ -643,7 +646,7 @@ export function QSARModeling() {
                       </tr>
                     </thead>
                     <tbody>
-                      {savedModels.map((m: SavedModel) => (
+                    {(savedModels || []).map((m: SavedModel) => (
                         <tr key={m.model_id} className="border-b border-gray-800">
                           <td className="py-3 text-white font-medium">{m.name}</td>
                           <td className="py-3 text-gray-300">{m.model_type}</td>
