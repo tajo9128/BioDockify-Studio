@@ -208,49 +208,73 @@ def prepare_protein_from_content(
     pdb_content: str, output_dir: str = "/tmp"
 ) -> Optional[Dict[str, Any]]:
     """
-    Prepare protein from PDB content
-    Steps: Remove water → Add H → Assign charges → Convert to PDBQT
-    Returns: {'pdbqt_path': str, 'pdbqt_content': str}
+    Prepare protein from PDB content using Open Babel (reliable for large proteins).
+    Steps: Remove water/hetero → Add H → Convert to PDBQT via obabel CLI.
     """
     try:
-        from rdkit import Chem
-        from rdkit.Chem import AllChem
+        os.makedirs(output_dir, exist_ok=True)
 
+        # Step 1: Clean PDB — remove water and common heteroatoms
         lines = pdb_content.split("\n")
-        pdb_lines = []
+        clean_lines = []
         for line in lines:
-            if line.startswith("ATOM") or line.startswith("HETATM"):
+            if line.startswith(("ATOM", "HETATM")):
                 resname = line[17:20].strip()
-                if resname not in ["HOH", "WAT", "H2O"]:
-                    pdb_lines.append(line)
+                if resname in ("HOH", "WAT", "H2O"):
+                    continue
+                # Skip common hetero groups (ions, buffers, cofactors)
+                if resname in ("SO4", "PO4", "CL", "NA", "K", "MG", "CA", "ZN", "FE"):
+                    continue
+            clean_lines.append(line)
 
-        clean_pdb = "\n".join(pdb_lines)
-        mol = Chem.MolFromPDBBlock(clean_pdb, sanitize=False, removeHs=False)
+        clean_pdb = "\n".join(clean_lines)
 
-        if mol is None:
-            logger.error("Failed to parse protein PDB")
+        # Step 2: Write clean PDB to temp file
+        pdb_path = os.path.join(
+            output_dir, f"receptor_clean_{random.randint(10000, 99999)}.pdb"
+        )
+        with open(pdb_path, "w") as f:
+            f.write(clean_pdb)
+
+        # Step 3: Convert to PDBQT using Open Babel CLI
+        pdbqt_path = pdb_path.replace(".pdb", ".pdbqt")
+        cmd = ["obabel", pdb_path, "-O", pdbqt_path, "-p", "7.4", "-xr"]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if result.returncode != 0:
+            logger.error(f"Open Babel protein conversion failed: {result.stderr}")
+            # Cleanup
+            for f in [pdb_path]:
+                if os.path.exists(f):
+                    os.remove(f)
             return None
 
-        try:
-            mol = Chem.AddHs(mol, addCoords=False)
-        except Exception as e:
-            logger.warning(f"AddHs failed ({e}), proceeding without hydrogens")
+        if not os.path.exists(pdbqt_path):
+            logger.error("Open Babel produced no output file")
+            return None
 
-        pdbqt_result = mol_to_pdbqt(mol, is_ligand=False)
-        pdbqt_content = pdbqt_result["pdbqt"]
+        # Step 4: Read PDBQT content
+        with open(pdbqt_path) as f:
+            pdbqt_content = f.read()
 
-        os.makedirs(output_dir, exist_ok=True)
-        receptor_id = random.randint(10000, 99999)
-        pdbqt_path = os.path.join(output_dir, f"receptor_{receptor_id}.pdbqt")
-        with open(pdbqt_path, "w") as f:
-            f.write(pdbqt_content)
+        if not pdbqt_content.strip():
+            logger.error("Open Babel produced empty PDBQT")
+            return None
+
+        # Step 5: Validate
+        if not _validate_pdbqt(pdbqt_content):
+            logger.warning("Protein PDBQT failed validation — attempting auto-repair")
+            pdbqt_content = _auto_repair_pdbqt(pdbqt_content)
+
+        # Cleanup temp PDB
+        if os.path.exists(pdb_path):
+            os.remove(pdb_path)
 
         num_residues = 0
         try:
             res_ids = set()
-            for line in pdb_content.split("\n"):
-                if line.startswith("ATOM") or line.startswith("HETATM"):
-                    res_id = line[17:27].strip()  # resname + chain + resseq
+            for line in clean_pdb.split("\n"):
+                if line.startswith(("ATOM", "HETATM")):
+                    res_id = line[17:27].strip()
                     res_ids.add(res_id)
             num_residues = len(res_ids)
         except Exception:
