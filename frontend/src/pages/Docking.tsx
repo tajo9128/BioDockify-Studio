@@ -73,13 +73,15 @@ export function Docking() {
 
   const runDocking = async () => {
     if (!receptorFile || !ligandFile) {
-      setError('Upload both receptor and ligand PDBQT files')
+      setError('Upload both receptor and ligand files')
       return
     }
-    if (!receptorFile.name.endsWith('.pdbqt') || !ligandFile.name.endsWith('.pdbqt')) {
-      setError('Only PDBQT files are supported')
-      return
-    }
+    const recExt = receptorFile.name.split('.').pop()?.toLowerCase()
+    const ligExt = ligandFile.name.split('.').pop()?.toLowerCase()
+    const recOk = ['pdb', 'pdbqt', 'ent'].includes(recExt ?? '')
+    const ligOk = ['pdb', 'pdbqt', 'sdf', 'mol2', 'ent'].includes(ligExt ?? '')
+    if (!recOk) { setError(`Receptor format ".${recExt}" not supported. Use .pdb, .pdbqt, or .ent`); return }
+    if (!ligOk) { setError(`Ligand format ".${ligExt}" not supported. Use .pdb, .pdbqt, .sdf, .mol2, or .ent`); return }
     setRunning(true)
     setError('')
     setResult(null)
@@ -295,15 +297,15 @@ export function Docking() {
 
         <div className="space-y-4">
           <div>
-            <label className={`text-xs font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Receptor (.pdbqt)</label>
-            <input type="file" accept=".pdbqt" onChange={e => setReceptorFile(e.target.files?.[0] || null)}
+            <label className={`text-xs font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Receptor (.pdb, .pdbqt, .ent)</label>
+            <input type="file" accept=".pdb,.pdbqt,.ent" onChange={e => setReceptorFile(e.target.files?.[0] || null)}
               className={`w-full mt-1 p-2 rounded border text-sm ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-300'}`} />
             {receptorFile && <p className="text-xs text-green-500 mt-1">✓ {receptorFile.name}</p>}
           </div>
 
           <div>
-            <label className={`text-xs font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Ligand (.pdbqt)</label>
-            <input type="file" accept=".pdbqt" onChange={e => setLigandFile(e.target.files?.[0] || null)}
+            <label className={`text-xs font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Ligand (.pdb, .pdbqt, .sdf, .mol2, .ent)</label>
+            <input type="file" accept=".pdb,.pdbqt,.sdf,.mol2,.ent" onChange={e => setLigandFile(e.target.files?.[0] || null)}
               className={`w-full mt-1 p-2 rounded border text-sm ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-300'}`} />
             {ligandFile && <p className="text-xs text-green-500 mt-1">✓ {ligandFile.name}</p>}
           </div>
