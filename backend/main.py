@@ -161,6 +161,33 @@ async def startup_event():
     print("")
 
 
+def _extract_pose_from_pdbqt(pdbqt_content: str, pose_num: int) -> str:
+    """Extract a single pose from multi-pose PDBQT file"""
+    if not pdbqt_content:
+        return ""
+    lines = pdbqt_content.strip().split("\n")
+    pose_lines = []
+    current_model = 0
+    for line in lines:
+        if line.startswith("MODEL") and "ENDMDL" not in line:
+            current_model = int(line.split()[1])
+            if current_model == pose_num:
+                pose_lines = [line]
+            elif current_model > pose_num:
+                break
+        elif current_model == pose_num and (
+            line.startswith("ATOM")
+            or line.startswith("HETATM")
+            or line.startswith("ENDMDL")
+        ):
+            pose_lines.append(line)
+            if line.startswith("ENDMDL"):
+                break
+    if not pose_lines and lines:
+        return pdbqt_content
+    return "\n".join(pose_lines)
+
+
 class PoseRequest(BaseModel):
     receptor: str
     ligand: str
@@ -1542,6 +1569,9 @@ def api_docking_run(req: DockingRunRequest):
 
             for r in results:
                 try:
+                    pose_pdb = ""
+                    if pdb_data:
+                        pose_pdb = _extract_pose_from_pdbqt(pdb_data, r.get("mode", 1))
                     add_docking_result(
                         job_id,
                         r.get("mode", 1),
@@ -1549,7 +1579,7 @@ def api_docking_run(req: DockingRunRequest):
                         vina_score=r.get("vina_score"),
                         gnina_score=r.get("gnina_score"),
                         rf_score=r.get("rf_score"),
-                        pdb_data=pdb_data or None,
+                        pdb_data=pose_pdb or None,
                         hydrophobic_term=r.get("hydrophobic_term"),
                         rotatable_penalty=r.get("rotatable_penalty"),
                         lipo_contact=r.get("lipo_contact"),
