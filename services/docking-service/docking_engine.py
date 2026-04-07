@@ -87,7 +87,8 @@ def prepare_receptor_file(
         )
         if convert_pdb_to_pdbqt(receptor_path, output_path, is_ligand=False):
             return output_path
-        return receptor_path
+        logger.error(f"Failed to convert receptor PDB to PDBQT: {receptor_path}")
+        return None
 
     logger.error(f"Unsupported receptor format: {ext}")
     return None

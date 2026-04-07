@@ -546,7 +546,7 @@ def _mol_to_pdbqt_rdkit(mol, is_ligand: bool = True) -> str:
         for i, atom in enumerate(mol.GetAtoms()):
             pos = positions[i]
             serial = (i + 1) % 99999
-            ad_type = get_ad4_atom_type(atom.GetAtomicNum())
+            ad_type = get_ad4_atom_type_from_symbol(atom.GetSymbol())
             charge = _gasteiger(atom)
 
             line = (
@@ -582,7 +582,7 @@ def _mol_to_pdbqt_rdkit(mol, is_ligand: bool = True) -> str:
         for i, atom in enumerate(mol.GetAtoms()):
             pos = positions[i]
             serial = (i + 1) % 99999
-            ad_type = get_ad4_atom_type(atom.GetAtomicNum())
+            ad_type = get_ad4_atom_type_from_symbol(atom.GetSymbol())
             charge = _gasteiger(atom)
 
             line = (
@@ -1267,6 +1267,9 @@ def parse_vina_log(log_file: str, num_modes: int) -> List[Dict[str, Any]]:
         logger.warning(f"Failed to parse Vina log: {e}")
 
     if not results:
+        # WARNING: Log parsing failed - generating synthetic fallback scores
+        # These are NOT real docking results and should not be used for analysis
+        logger.warning("Vina log parsing failed - generating synthetic fallback scores (NOT REAL RESULTS)")
         for i in range(num_modes):
             base = -5.0 - (i * 0.3) - (random.random() * 0.5)
             results.append(
@@ -1275,7 +1278,7 @@ def parse_vina_log(log_file: str, num_modes: int) -> List[Dict[str, Any]]:
                     "vina_score": round(base, 2),
                     "gnina_score": None,
                     "rf_score": None,
-                    "source": "vina",
+                    "source": "vina_synthetic_fallback",
                 }
             )
 

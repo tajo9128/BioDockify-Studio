@@ -453,17 +453,11 @@ class SASAAnalyzer:
                     context = app.Context(system, app.Integrator(0.001*unit.picosecond))
                     context.setPositions(modeller.positions)
                     
-                    state = context.getState(getEnergy=True)
-                    sasa_nm2 = 0.0
-                    
-                    for i in range(len(frame_pos)):
-                        if hasattr(frame_pos[i], 'x'):
-                            x, y, z = frame_pos[i].x, frame_pos[i].y, frame_pos[i].z
-                        else:
-                            x, y, z = frame_pos[i][0], frame_pos[i][1], frame_pos[i][2]
-                        sasa_nm2 += 4 * 3.14159 * (0.17 + 0.14) ** 2
-                    
-                    sasa_nm2 = sasa_nm2 / (len(frame_pos) * 10)
+                    # Note: Proper SASA requires external tools like FreeSASA or MDTraj
+                    # This is a simplified approximation based on atom count
+                    n_atoms = len(frame_pos)
+                    # Approximate SASA: ~1.5 nm² per 10 atoms for typical proteins
+                    sasa_nm2 = (n_atoms / 10.0) * 1.5
                     sasa_values.append(round(sasa_nm2, 4))
                     del context
                     
@@ -643,4 +637,4 @@ class HydrogenBondAnalyzer:
                 if dist_sq < donor_cutoff_sq:
                     count += 1
         
-        return max(0, count // 3)
+        return count

@@ -117,6 +117,11 @@ def _get_job_status(job_id: str) -> Optional[Dict]:
     return json.loads(data) if data else None
 
 
+def _update_progress(job_id: str, progress: int, message: str = ""):
+    """Helper to update job progress"""
+    _set_job_status(job_id, "running", progress=progress, message=message)
+
+
 def _persist_to_db(job_id: str, request: "DynamicsRequest", result: Dict[str, Any]):
     """Persist completed MD job result to PostgreSQL and Nanobot memory via api-backend."""
     try:
@@ -144,7 +149,7 @@ def _persist_to_db(job_id: str, request: "DynamicsRequest", result: Dict[str, An
         with httpx.Client(timeout=15.0) as client:
             client.post(f"{API_BACKEND_URL}/db/md/save", json=payload)
             client.post(
-                f"{API_BACKEND_URL}/memory/auto记住",
+                f"{API_BACKEND_URL}/memory/auto-remember",
                 params={
                     "user_id": job_id,
                     "job_uuid": job_id,

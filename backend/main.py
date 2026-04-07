@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
+from pathlib import Path
 import os
 import re
 import sys
@@ -131,9 +132,6 @@ async def upload_page():
 @app.on_event("startup")
 async def startup_event():
     """Print startup information when server starts"""
-    import io
-
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     print("")
     print("=" * 60)
     print("  BioDockify Studio AI - Backend Started")
