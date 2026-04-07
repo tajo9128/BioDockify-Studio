@@ -34,7 +34,6 @@ interface AiContext {
 
 interface SystemStatus {
   services?: { rdkit: any; vina: any; gnina: any; ollama: any }
-  gpu?: { available: boolean }
   system?: { cpu_percent: number; memory_percent: number }
 }
 
@@ -248,7 +247,6 @@ export function AIAssistant() {
                   { n: 'RDKit', ok: systemStatus.services?.rdkit?.available },
                   { n: 'Vina', ok: systemStatus.services?.vina?.available },
                   { n: 'Ollama', ok: systemStatus.services?.ollama?.available },
-                  { n: 'GPU', ok: systemStatus.gpu?.available },
                 ].map(s => (
                   <div key={s.n} style={{ background: crd, borderRadius: 6, padding: '5px 8px', display: 'flex', alignItems: 'center', gap: 6, border: `1px solid ${bdr}` }}>
                     <span style={{ width: 6, height: 6, borderRadius: '50%', background: s.ok ? '#22c55e' : '#4b5563', flexShrink: 0 }} />
