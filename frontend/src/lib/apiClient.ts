@@ -4,7 +4,7 @@ const API_BASE = ''
 
 export const apiClient = axios.create({
   baseURL: API_BASE,
-  timeout: 60000,
+  timeout: 120000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -13,7 +13,9 @@ export const apiClient = axios.create({
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error('API Error:', error?.response?.data || error.message)
+    if (import.meta.env.DEV) {
+      console.error('API Error:', error?.response?.data || error.message)
+    }
     return Promise.reject(error)
   }
 )
