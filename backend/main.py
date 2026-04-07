@@ -2421,7 +2421,11 @@ def get_feature_visualization(feature_type: str):
 # LLM Settings Endpoints (MUST be before SPA catch-all)
 # ============================================================
 
-OLLAMA_HOST = os.getenv("OLLAMA_URL", "http://ollama:11434").replace("http://", "")
+OLLAMA_HOST = (
+    os.getenv("OLLAMA_URL", "http://host.docker.internal:11434")
+    .replace("http://", "")
+    .replace("https://", "")
+)
 LLM_SETTINGS = {
     "provider": "ollama",
     "model": os.getenv("OLLAMA_MODEL", "qwen3:4b"),
@@ -2526,7 +2530,7 @@ def llm_test(req: LLMTestRequest):
                         "stream": False,
                     },
                     headers={"Content-Type": "application/json"},
-                    timeout=5,
+                    timeout=120,
                 )
                 if response.status_code == 200:
                     test_url = url
