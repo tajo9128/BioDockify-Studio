@@ -56,20 +56,24 @@ def fetch_similar_ligands(req: SimilaritySearchRequest) -> List[Dict]:
 
 
 def _fetch_pubchem_similar(query_smiles: str, threshold: float, max_results: int) -> List[Dict]:
-    """PubChem similarity search via PUG-REST API."""
+    """PubChem similarity search via PUG-REST API (fastsimilarity_2d, synchronous)."""
     import requests
+    from urllib.parse import quote
 
     try:
+        # URL-encode SMILES so special chars like ()=#[] don't break the path
+        encoded_smiles = quote(query_smiles, safe="")
         cid_resp = requests.get(
-            f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/{query_smiles}/cids/JSON",
+            f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/{encoded_smiles}/cids/JSON",
             timeout=10,
         )
         if cid_resp.status_code != 200:
             return []
         cid = cid_resp.json()["IdentifierList"]["CID"][0]
 
+        # fastsimilarity_2d is the synchronous 2D-Tanimoto endpoint (not async)
         similar_resp = requests.get(
-            f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/similarity/fingerprint/JSON",
+            f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/fastsimilarity_2d/cid/{cid}/cids/JSON",
             params={"Threshold": int(threshold * 100), "MaxRecords": max_results},
             timeout=30,
         )
@@ -130,7 +134,11 @@ def parse_modification_prompt(prompt: str, parent_smiles: str) -> ModificationPl
         strategy=strategy,
         transformations=transformations[:3],
         property_constraints={
-            **ModificationPlan.model_fields["property_constraints"].default_factory(),
+            "mw_max": 500.0,
+            "logp_max": 5.0,
+            "hbd_max": 5,
+            "hba_max": 10,
+            "rot_bonds_max": 10,
             **constraints,
         },
         max_variants=50,

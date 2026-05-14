@@ -5733,14 +5733,11 @@ async def chem_similarity_search(req: Dict[str, Any] = Body(...)):
         raise HTTPException(status_code=400, detail="smiles required")
     try:
         import httpx
+        from urllib.parse import quote
 
-        encoded = (
-            smiles.replace("/", "%2F")
-            .replace("+", "%2B")
-            .replace("#", "%23")
-            .replace("@", "%40")
-        )
-        url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/similarity/smiles/{encoded}/JSON?Threshold={int(threshold * 100)}&MaxRecords={max_results}"
+        encoded = quote(smiles, safe="")
+        # fastsimilarity_2d is synchronous; /similarity is async and returns a ListKey Waiting response
+        url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/fastsimilarity_2d/smiles/{encoded}/property/IsomericSMILES,IUPACName/JSON?Threshold={int(threshold * 100)}&MaxRecords={max_results}"
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(url)
             if not resp.is_success:
