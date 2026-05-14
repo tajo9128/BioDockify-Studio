@@ -68,7 +68,7 @@ def _get_best_platform():
         try:
             platform = mm.Platform.getPlatformByName(platform_name)
             # Verify platform works by checking it has at least one GPU
-            props = platform.getProperties()
+            props = platform.getPropertyNames()
             if platform_name == "CUDA":
                 if "CudaDeviceIndex" in props or "CudaPrecision" in props:
                     logger.info(f"Using GPU platform: {platform_name}")
@@ -218,14 +218,14 @@ def gpu_status():
             available_platforms.append(name)
 
             if name in ["CUDA", "OpenCL", "HIP"]:
-                props = platform.getProperties()
+                props = platform.getPropertyNames()
                 gpu_info = {"name": name, "properties": props}
 
                 # Try to get device info
                 if name == "CUDA":
-                    gpu_info["device_count"] = props.get("CudaDeviceIndex", "Unknown")
+                    gpu_info["device_count"] = "1" if "CudaDeviceIndex" in props else "Unknown"
                 elif name == "OpenCL":
-                    gpu_info["device_count"] = props.get("OpenCLDeviceIndex", "Unknown")
+                    gpu_info["device_count"] = "1" if "OpenCLDeviceIndex" in props else "Unknown"
 
                 gpu_platforms.append(gpu_info)
 
@@ -900,24 +900,25 @@ def _run_equilibration(job_id: str, request: EquilibrationRequest):
             25
         ))
         context.reinitialize(preserveState=True)
-        context.setPositions(modeller.positions)
         integrator.step(100000)
         npt_energy = context.getState(getEnergy=True).getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
 
         # Save checkpoint
         _update_progress(job_id, 85, "Saving checkpoint...")
         checkpoint_path = STORAGE_DIR / f"equilibrated_{job_id}.chk"
+        equil_state = context.getState(getPositions=True, getVelocities=True)
+        equil_positions = equil_state.getPositions()
+        
         sim = app.Simulation(modeller.topology, system, integrator, platform)
-        sim.context.setPositions(modeller.positions)
+        sim.context.setPositions(equil_positions)
         sim.saveCheckpoint(str(checkpoint_path))
 
         # Save equilibrated structure
-        state = sim.context.getState(getPositions=True)
         equil_path = STORAGE_DIR / f"equilibrated_{job_id}.pdb"
         with open(equil_path, "w") as f:
             app.PDBFile.writeFile(
                 modeller.topology,
-                state.getPositions(asNumpy=True).value_in_unit(unit.nanometer),
+                equil_state.getPositions(asNumpy=True).value_in_unit(unit.nanometer),
                 f,
             )
 
@@ -939,68 +940,106 @@ def _run_equilibration(job_id: str, request: EquilibrationRequest):
 
 
 @app.post("/resume")
-def resume_simulation(job_id: str, steps: int = 50000, frame_interval: int = 500):
-    """Resume simulation from checkpoint"""
-    try:
-        import openmm as mm
-        import openmm.app as app
-        from openmm import unit
+def resume_simulation(
+    job_id: str,
+    steps: int = 50000,
+    frame_interval: int = 500,
+    background_tasks: BackgroundTasks = None,
+):
+    """Resume simulation from equilibrated structure"""
+    struct_path = STORAGE_DIR / f"equilibrated_{job_id}.pdb"
+    if not struct_path.exists():
+        struct_path = STORAGE_DIR / f"frame_last_{job_id}.pdb"
+    if not struct_path.exists():
+        struct_path = STORAGE_DIR / f"minimized_{job_id}.pdb"
+    if not struct_path.exists():
+        raise HTTPException(404, detail=f"No structure found for {job_id}")
 
-        checkpoint_path = STORAGE_DIR / f"equilibrated_{job_id}.chk"
-        if not checkpoint_path.exists():
-            raise HTTPException(404, f"No checkpoint found for {job_id}")
+    resume_job_id = f"resume_{uuid.uuid4().hex[:8]}"
+    _set_job_status(resume_job_id, "pending", progress=0)
 
-        resume_job_id = f"resume_{uuid.uuid4().hex[:8]}"
-        _set_job_status(resume_job_id, "pending", progress=0)
+    def _resume_task():
+        try:
+            import numpy as np
+            import openmm as mm
+            import openmm.app as app
+            from openmm import unit
 
-        def _resume_task():
-            try:
-                import numpy as np
-                _set_job_status(resume_job_id, "running", progress=5)
+            _set_job_status(resume_job_id, "running", progress=5)
 
-                sim = app.loadCheckpoint(str(checkpoint_path))
-                platform = _get_best_platform()
+            pdb = app.PDBFile(str(struct_path))
+            forcefield = app.ForceField("amber14/protein.ff14SB.xml", "amber14/tip3p.xml")
+            modeller = app.Modeller(pdb.topology, pdb.positions)
+            modeller.addHydrogens(forcefield)
+            modeller.addSolvent(
+                forcefield,
+                boxSize=mm.Vec3(3.0, 3.0, 3.0) * unit.nanometer,
+                model="tip3p",
+            )
+            system = forcefield.createSystem(
+                modeller.topology,
+                nonbondedMethod=app.PME,
+                nonbondedCutoff=1.0 * unit.nanometer,
+                constraints=app.HBonds,
+            )
+            system.addForce(
+                mm.MonteCarloBarostat(
+                    1 * unit.atmosphere, 300 * unit.kelvin, 25
+                )
+            )
 
-                energies = []
-                frames = []
-                total_frames = steps // frame_interval
+            integrator = mm.LangevinIntegrator(
+                300 * unit.kelvin, 1 / unit.picosecond, 0.002 * unit.picosecond
+            )
+            platform = _get_best_platform()
+            context = mm.Context(system, integrator, platform)
+            context.setPositions(modeller.positions)
+            context.setVelocitiesToTemperature(300 * unit.kelvin)
 
-                for i in range(0, steps, frame_interval):
-                    sim.step(frame_interval)
-                    state = sim.context.getState(getPositions=True, getEnergy=True)
-                    frames.append(state.getPositions(asNumpy=True).value_in_unit(unit.nanometer))
-                    energies.append(state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole))
-                    pct = 5 + int(90 * (i // frame_interval) / max(total_frames, 1))
-                    _update_progress(resume_job_id, pct, f"Step {i}/{steps}")
+            energies = []
+            frames = []
+            total_frames = steps // frame_interval
 
-                traj_path = STORAGE_DIR / f"trajectory_{resume_job_id}.pdb"
-                with open(traj_path, "w") as f:
-                    f.write("REMARK   MD Trajectory generated by BioDockify\n")
-                    f.write(f"REMARK   Job ID: {resume_job_id}\n")
-                    for i, frame in enumerate(frames):
-                        f.write(f"MODEL     {i+1:4d}\n")
-                        app.PDBFile.writeFile(sim.topology, frame * unit.nanometer, f, keepIds=True)
-                        f.write("ENDMDL\n")
+            for i in range(0, steps, frame_interval):
+                integrator.step(frame_interval)
+                state = context.getState(getPositions=True, getEnergy=True)
+                frames.append(
+                    state.getPositions(asNumpy=True).value_in_unit(unit.nanometer)
+                )
+                energies.append(
+                    state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
+                )
+                pct = 5 + int(90 * (i // frame_interval) / max(total_frames, 1))
+                _update_progress(resume_job_id, pct, f"Step {i}/{steps}")
 
-                result = {
-                    "trajectory_path": str(traj_path),
-                    "n_frames": len(frames),
-                    "n_steps": steps,
-                    "avg_energy_kj_mol": round(float(np.mean(energies[-10:])), 2),
-                }
-                _set_job_status(resume_job_id, "completed", result=result, progress=100)
+            traj_path = STORAGE_DIR / f"trajectory_{resume_job_id}.pdb"
+            with open(traj_path, "w") as f:
+                f.write("REMARK   MD Trajectory generated by BioDockify\n")
+                f.write(f"REMARK   Job ID: {resume_job_id}\n")
+                for i, frame in enumerate(frames):
+                    f.write(f"MODEL     {i+1:4d}\n")
+                    app.PDBFile.writeFile(
+                        modeller.topology, frame * unit.nanometer, f, keepIds=True
+                    )
+                    f.write("ENDMDL\n")
 
-            except Exception as e:
-                _set_job_status(resume_job_id, "failed", error=str(e))
+            result = {
+                "trajectory_path": str(traj_path),
+                "n_frames": len(frames),
+                "n_steps": steps,
+                "avg_energy_kj_mol": round(float(np.mean(energies[-10:])), 2),
+            }
+            _set_job_status(resume_job_id, "completed", result=result, progress=100)
 
-        # Run in background via FastAPI's background_tasks system at route level
-        _resume_task()
-        return {"job_id": resume_job_id, "status": "pending", "message": "Resume queued"}
+        except Exception as e:
+            _set_job_status(resume_job_id, "failed", error=str(e))
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        return {"error": str(e)}
+    if background_tasks:
+        background_tasks.add_task(_resume_task)
+    else:
+        threading.Thread(target=_resume_task, daemon=True).start()
+
+    return {"job_id": resume_job_id, "status": "pending", "message": "Resume queued"}
 
 
 @app.post("/mmgbsa")

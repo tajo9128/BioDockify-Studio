@@ -41,7 +41,7 @@ PHARMACOPHORE_SERVICE_URL = os.getenv(
     "PHARMACOPHORE_SERVICE_URL", "http://pharmacophore-service:8004"
 )
 QSAR_SERVICE_URL = os.getenv("QSAR_SERVICE_URL", "http://qsar-service:8005")
-MD_SERVICE_URL = os.getenv("MD_SERVICE_URL", "http://md-service:8006")
+MD_SERVICE_URL = os.getenv("MD_SERVICE_URL", "http://md-service:8000")
 SENTINEL_SERVICE_URL = os.getenv("SENTINEL_SERVICE_URL", "http://sentinel-service:8007")
 ANALYSIS_SERVICE_URL = os.getenv("ANALYSIS_SERVICE_URL", "http://analysis-service:8008")
 BRAIN_SERVICE_URL = os.getenv("BRAIN_SERVICE_URL", "http://brain-service:8000")
@@ -988,6 +988,68 @@ async def md_minimize(pdb_content: str):
                 f"{MD_SERVICE_URL}/minimize",
                 params={"pdb_content": pdb_content},
             )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+class MDEquilibrationRequest(BaseModel):
+    pdb_content: str
+    temperature: float = 300.0
+    pressure: float = 1.0
+    solvent_model: str = "tip3p"
+    ionic_strength: float = 0.15
+    name: str = "equilibration"
+
+
+@app.post("/md/equilibration")
+async def md_equilibration(request: MDEquilibrationRequest):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.post(
+                f"{MD_SERVICE_URL}/equilibration",
+                json=request.model_dump(),
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/md/resume")
+async def md_resume(job_id: str, steps: int = 50000, frame_interval: int = 500):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.post(
+                f"{MD_SERVICE_URL}/resume",
+                params={"job_id": job_id, "steps": steps, "frame_interval": frame_interval},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/md/mmgbsa")
+async def md_mmgbsa(request: Dict[str, Any]):
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            response = await client.post(
+                f"{MD_SERVICE_URL}/mmgbsa",
+                json=request,
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/md/gpu/status")
+async def md_gpu_status():
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(f"{MD_SERVICE_URL}/gpu/status")
             response.raise_for_status()
             return response.json()
         except httpx.HTTPError as e:
