@@ -201,11 +201,15 @@ registry = ToolRegistry()
 memory = ConversationMemory()
 
 
+_OLLAMA_DEFAULT_URL = f"http://{os.getenv('OLLAMA_HOST', 'host.docker.internal:11434')}/v1"
+_OLLAMA_DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
+
+
 async def get_llm_settings() -> dict:
-    """Fetch LLM settings from api-backend"""
+    """Fetch LLM settings from api-backend (using raw endpoint to get actual API key)."""
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(f"{API_BACKEND_URL}/llm/settings")
+            response = await client.get(f"{API_BACKEND_URL}/llm/settings/raw")
             response.raise_for_status()
             return response.json()
     except Exception as e:
@@ -213,33 +217,76 @@ async def get_llm_settings() -> dict:
         # Default to Ollama when api-backend is unreachable
         return {
             "provider": "ollama",
-            "model": os.getenv("OLLAMA_MODEL", "llama3.2"),
+            "model": _OLLAMA_DEFAULT_MODEL,
             "api_key": "",
-            "base_url": f"http://{os.getenv('OLLAMA_HOST', 'host.docker.internal:11434')}/v1",
+            "base_url": _OLLAMA_DEFAULT_URL,
             "temperature": 0.0,
             "max_tokens": 4096,
         }
 
 
-async def get_provider() -> LLMProvider:
+async def _check_ollama(base_url: str) -> bool:
+    """Return True if Ollama is reachable (3s timeout)."""
+    try:
+        api_root = base_url.rstrip("/")
+        if api_root.endswith("/v1"):
+            api_root = api_root[:-3]
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get(f"{api_root}/api/tags")
+            return r.status_code == 200
+    except Exception:
+        return False
+
+
+async def get_provider(provider_override: Optional[str] = None):
+    """
+    Resolve the LLM provider to use.
+    provider_override: 'ollama' | 'paid' | None (use settings default)
+    Returns (provider_instance, provider_name, model_name).
+    Falls back to paid provider when Ollama is selected but unavailable.
+    """
     settings = await get_llm_settings()
     api_key = settings.get("api_key", "")
     base_url = settings.get("base_url", "https://api.openai.com/v1")
     model = settings.get("model", "gpt-4o-mini")
+    config_provider = settings.get("provider", "openai")
 
-    provider_type = settings.get("provider", "openai")
+    # Determine whether caller wants Ollama
+    want_ollama = provider_override == "ollama" or (
+        provider_override is None and config_provider == "ollama"
+    )
 
-    if provider_type == "anthropic":
-        return AnthropicProvider(api_key, model)
-    elif provider_type == "ollama":
-        # Ollama uses OpenAI-compatible endpoint at /v1/chat/completions
-        # Ensure base_url has /v1 suffix for compatibility
-        ollama_url = base_url.rstrip("/")
-        if not ollama_url.endswith("/v1"):
-            ollama_url = f"{ollama_url}/v1"
-        return OpenAIProvider(api_key or "ollama", ollama_url, model)
-    else:
-        return OpenAIProvider(api_key, base_url, model)
+    if want_ollama:
+        # Resolve Ollama URL/model from settings or defaults
+        if config_provider == "ollama":
+            o_url = base_url.rstrip("/")
+            o_model = model
+        else:
+            o_url = _OLLAMA_DEFAULT_URL.rstrip("/")
+            o_model = _OLLAMA_DEFAULT_MODEL
+        if not o_url.endswith("/v1"):
+            o_url += "/v1"
+
+        if await _check_ollama(o_url):
+            logger.info(f"Using Ollama at {o_url} model={o_model}")
+            return OpenAIProvider("ollama", o_url, o_model), "ollama", o_model
+
+        # Ollama is unreachable — attempt paid fallback
+        logger.warning(f"Ollama unavailable at {o_url}")
+        if config_provider != "ollama" and api_key:
+            logger.info(f"Ollama down, falling back to configured provider: {config_provider}")
+            want_ollama = False  # fall through to paid logic
+        else:
+            raise RuntimeError(
+                "Ollama is not reachable. Please start Ollama or switch to a Paid Model in Settings."
+            )
+
+    # Paid / API-based provider
+    if config_provider == "anthropic":
+        return AnthropicProvider(api_key, model), "anthropic", model
+
+    eff_url = base_url if base_url else "https://api.openai.com/v1"
+    return OpenAIProvider(api_key, eff_url, model), config_provider, model
 
 
 def create_system_prompt() -> str:
@@ -339,6 +386,7 @@ class ChatRequest(BaseModel):
     message: str
     conversation_id: Optional[str] = None
     stream: bool = False
+    provider_override: Optional[str] = None  # 'ollama' | 'paid' | None
 
 
 class ChatResponse(BaseModel):
@@ -394,7 +442,7 @@ async def chat(request: ChatRequest):
         messages.append({"role": h["role"], "content": h["content"]})
 
     tools = registry.list_tools()
-    p = await get_provider()
+    p, actual_provider, actual_model = await get_provider(request.provider_override)
 
     try:
         tools_used = []
@@ -465,13 +513,12 @@ async def chat(request: ChatRequest):
             tools_used,
         )
 
-        settings = await get_llm_settings()
         return ChatResponse(
             response=final_content or "Completed",
             conversation_id=conv_id,
             tools_used=tools_used,
-            model=settings.get("model", "unknown"),
-            provider=settings.get("provider", "openai"),
+            model=actual_model,
+            provider=actual_provider,
             available=True,
         )
 
@@ -499,7 +546,7 @@ async def chat_stream(request: ChatRequest):
     for h in history:
         messages.append({"role": h["role"], "content": h["content"]})
 
-    p = await get_provider()
+    p, actual_provider, actual_model = await get_provider(request.provider_override)
 
     async def generate():
         try:
@@ -522,14 +569,15 @@ async def chat_stream(request: ChatRequest):
 
 @app.get("/chat/status")
 async def chat_status():
-    """Get chat service status"""
+    """Get chat service status including per-provider availability."""
     settings = await get_llm_settings()
     provider = settings.get("provider", "openai")
     base_url = settings.get("base_url", "")
     api_key = settings.get("api_key", "")
     available = False
     models = []
-    
+
+    # Check configured provider availability
     try:
         if provider == "ollama":
             # Strip /v1 suffix for native Ollama API endpoint
@@ -564,9 +612,16 @@ async def chat_status():
         logger.warning(f"Status check failed for {provider}: {e}")
         available = False
 
+    # Always check Ollama separately so the UI toggle knows its state
+    ollama_url = (
+        base_url if provider == "ollama" else _OLLAMA_DEFAULT_URL
+    )
+    ollama_available = await _check_ollama(ollama_url)
+
     return {
         "provider": provider,
-        "ollama_available": available,
+        "provider_available": available,
+        "ollama_available": ollama_available,  # explicit Ollama status for UI toggle
         "models": [{"name": m} for m in models],
     }
 

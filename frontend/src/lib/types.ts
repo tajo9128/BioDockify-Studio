@@ -117,6 +117,7 @@ export interface RMSDResponse {
 export interface ChatRequest {
   message: string
   conversation_id?: string
+  provider_override?: string  // 'ollama' | 'paid' | undefined
 }
 
 export interface ChatResponse {
@@ -148,6 +149,7 @@ export interface PlatformContext {
 
 export interface ChatStatus {
   provider: string
+  provider_available: boolean
   ollama_available: boolean
   models: string[]
   error?: string

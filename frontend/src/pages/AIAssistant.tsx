@@ -42,8 +42,16 @@ export function AIAssistant() {
   const [providerStatus, setProviderStatus] = useState<{ provider: string; available: boolean } | null>(null)
   const [ctx, setCtx] = useState<PlatformContext | null>(null)
   const [convId, setConvId] = useState<string>(() => crypto.randomUUID())
+  const [selectedProvider, setSelectedProvider] = useState<'ollama' | 'paid'>(() => {
+    return (localStorage.getItem('biodockify_provider_pref') as 'ollama' | 'paid') ?? 'ollama'
+  })
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const handleProviderSwitch = (p: 'ollama' | 'paid') => {
+    setSelectedProvider(p)
+    localStorage.setItem('biodockify_provider_pref', p)
+  }
 
   const fetchCtx = useCallback(async () => {
     try { setCtx(await getPlatformContext()) } catch { /* silent */ }
@@ -52,7 +60,15 @@ export function AIAssistant() {
   useEffect(() => {
     fetchCtx()
     getChatStatus()
-      .then(s => setProviderStatus({ provider: s.provider, available: s.ollama_available }))
+      .then(s => {
+        setProviderStatus({ provider: s.provider, available: s.provider_available ?? s.ollama_available })
+        // Auto-select best provider on first load (no saved preference)
+        if (!localStorage.getItem('biodockify_provider_pref')) {
+          if (!s.ollama_available && s.provider_available) {
+            handleProviderSwitch('paid')
+          }
+        }
+      })
       .catch(() => {})
     const t = setInterval(fetchCtx, 8000)
     return () => clearInterval(t)
@@ -70,7 +86,7 @@ export function AIAssistant() {
     setLoading(true)
     setError(null)
     try {
-      const res = await sendChat(txt, convId)
+      const res = await sendChat(txt, convId, selectedProvider)
       if (res.conversation_id) setConvId(res.conversation_id)
       setMessages(p => [...p, {
         id: (Date.now() + 1).toString(),
@@ -272,6 +288,31 @@ export function AIAssistant() {
               )}
             </div>
             <div className="flex items-center gap-2">
+              {/* Provider toggle */}
+              <div className="flex items-center bg-surface-secondary border border-border-light rounded-lg p-0.5 gap-0.5" title="Select AI provider">
+                <button
+                  className={`px-2.5 py-1 rounded text-xs font-medium transition-all focus:outline-none ${
+                    selectedProvider === 'ollama'
+                      ? 'bg-gradient-to-r from-purple-600 to-blue-500 text-white shadow-sm'
+                      : 'text-text-tertiary hover:text-text-secondary'
+                  }`}
+                  onClick={() => handleProviderSwitch('ollama')}
+                  title="Use Ollama (local)"
+                >
+                  Ollama
+                </button>
+                <button
+                  className={`px-2.5 py-1 rounded text-xs font-medium transition-all focus:outline-none ${
+                    selectedProvider === 'paid'
+                      ? 'bg-gradient-to-r from-purple-600 to-blue-500 text-white shadow-sm'
+                      : 'text-text-tertiary hover:text-text-secondary'
+                  }`}
+                  onClick={() => handleProviderSwitch('paid')}
+                  title="Use paid model (DeepSeek, OpenAI, etc.)"
+                >
+                  Paid API
+                </button>
+              </div>
               <span className="text-xs text-text-tertiary font-mono">
                 {convId.slice(0, 8)}…
               </span>

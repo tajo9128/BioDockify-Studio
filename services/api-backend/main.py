@@ -2005,6 +2005,12 @@ async def get_llm_settings():
     return {**llm_settings, "api_key": "***" if llm_settings.get("api_key") else ""}
 
 
+@app.get("/llm/settings/raw")
+async def get_llm_settings_raw():
+    """Internal endpoint: returns settings with actual API key (used by brain-service on Docker network only)."""
+    return llm_settings
+
+
 class LLMSettingsUpdate(BaseModel):
     provider: Optional[str] = None
     model: Optional[str] = None

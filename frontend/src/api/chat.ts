@@ -1,9 +1,10 @@
 import { apiClient } from '@/lib/apiClient'
 import type { ChatRequest, ChatResponse, ChatStatus, PlatformContext } from '@/lib/types'
 
-export async function sendChat(message: string, conversationId?: string): Promise<ChatResponse> {
+export async function sendChat(message: string, conversationId?: string, providerOverride?: string): Promise<ChatResponse> {
   const body: ChatRequest = { message }
   if (conversationId) body.conversation_id = conversationId
+  if (providerOverride) body.provider_override = providerOverride
   const { data } = await apiClient.post<ChatResponse>('/brain/chat', body)
   return data
 }
