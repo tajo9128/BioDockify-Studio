@@ -8,7 +8,7 @@ import uuid
 import json
 from datetime import datetime
 
-app = FastAPI(title='Biodockify Studio AI', version='4.3.8')
+app = FastAPI(title='Biodockify Studio AI', version='4.4.0')
 
 app.add_middleware(
     CORSMiddleware,
@@ -141,7 +141,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
         </div>
         <footer class="status-bar">
             <span><span class="status-dot green"></span>Biodockify Studio AI</span>
-            <span>v4.3.8</span>
+            <span>v4.4.0</span>
         </footer>
     </div>
     <script>
@@ -392,7 +392,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
                         </div>
                     </div>
                 </div>
-                <div class="card"><h3>About</h3><p>Biodockify Studio AI v4.3.8</p><p style="color:#a0a0a0;margin-top:0.5rem">AI-Powered Autonomous Drug Discovery Platform</p></div>`
+                <div class="card"><h3>About</h3><p>Biodockify Studio AI v4.4.0</p><p style="color:#a0a0a0;margin-top:0.5rem">AI-Powered Autonomous Drug Discovery Platform</p></div>`
         };
         
         function showPage(page) {
@@ -760,7 +760,7 @@ async def root():
 
 @app.get('/health')
 async def health():
-    return {'status': 'healthy', 'timestamp': datetime.utcnow().isoformat(), 'version': '4.3.8'}
+    return {'status': 'healthy', 'timestamp': datetime.utcnow().isoformat(), 'version': '4.4.0'}
 
 @app.get('/api/stats')
 async def get_stats():
