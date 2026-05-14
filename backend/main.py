@@ -989,7 +989,11 @@ def chat_status():
 
 class DockingRunRequest(BaseModel):
     receptor_content: Optional[str] = None
+    receptor_format: Optional[str] = None
+    receptor_filename: Optional[str] = None
     ligand_content: Optional[str] = None
+    ligand_format: Optional[str] = None
+    ligand_filename: Optional[str] = None
     smiles: Optional[str] = None
     center_x: float = 0
     center_y: float = 0
@@ -1053,6 +1057,24 @@ def api_docking_run(req: DockingRunRequest):
                     return
             elif req.ligand_content:
                 ligand_content = req.ligand_content
+                # Use the format sent by the frontend, with auto-detection fallback
+                if req.ligand_format and req.ligand_format in ("sdf", "mol", "mol2", "pdb", "pdbqt", "smiles", "inchi"):
+                    input_format = req.ligand_format
+                else:
+                    # Auto-detect format from content
+                    trimmed = ligand_content.strip()
+                    if trimmed.startswith("InChI="):
+                        input_format = "inchi"
+                    elif any(trimmed.startswith(p) for p in ("ATOM", "HETATM", "REMARK", "HEADER", "TITLE")):
+                        input_format = "pdb"
+                    elif "@<TRIPOS>" in trimmed:
+                        input_format = "mol2"
+                    elif "V2000" in trimmed or "V3000" in trimmed or "$$$$" in trimmed:
+                        input_format = "sdf"
+                    elif len(trimmed) < 500 and "\n" not in trimmed and all(c.isalnum() or c in "@+\\-[]()=#%/." for c in trimmed):
+                        input_format = "smiles"
+                    else:
+                        input_format = "sdf"
             else:
                 DockingProgress.set_status(job_id, "failed", "No ligand provided")
                 update_job_status(job_id, "failed")

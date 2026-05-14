@@ -131,11 +131,30 @@ def smiles_to_3d(smiles: str, random_seed: int = 42) -> Optional[Dict[str, Any]]
         return None
 
 
+def _detect_ligand_format(content: str) -> str:
+    """Auto-detect ligand file format from content."""
+    trimmed = content.strip()
+    if trimmed.startswith("InChI="):
+        return "inchi"
+    if any(trimmed.startswith(p) for p in ("ATOM", "HETATM", "REMARK", "HEADER", "TITLE")):
+        return "pdb"
+    if "@<TRIPOS>" in trimmed:
+        return "mol2"
+    if "V2000" in trimmed or "V3000" in trimmed:
+        return "sdf" if "$$$$" in trimmed else "mol"
+    if "$$$$" in trimmed:
+        return "sdf"
+    if len(trimmed) < 500 and "\n" not in trimmed:
+        if all(c.isalnum() or c in "@+\\-[]()=#%/." for c in trimmed):
+            return "smiles"
+    return "sdf"
+
+
 def prepare_ligand_from_content(
     content: str, input_format: str = "sdf", output_dir: str = "/tmp"
 ) -> Optional[Dict[str, Any]]:
     """
-    Prepare ligand from file content (SDF, MOL2, PDB, or SMILES)
+    Prepare ligand from file content (SDF, MOL, MOL2, PDB, or SMILES)
     Returns: {'pdbqt_path': str, 'pdb': str, 'mol': mol object, 'num_rotatable_bonds': int}
     """
     try:
@@ -148,17 +167,43 @@ def prepare_ligand_from_content(
             result = smiles_to_3d(content)
             if result:
                 mol = result["mol"]
-        elif input_format == "sdf":
+        elif input_format in ("sdf", "mol"):
             suppl = Chem.SDMolSupplier()
             suppl.SetData(content)
             for m in suppl:
                 if m is not None:
                     mol = m
                     break
+            # If SDF/MOL parse failed, try MolBlock directly
+            if mol is None:
+                mol = Chem.MolFromMolBlock(content)
         elif input_format == "mol2":
             mol = Chem.MolFromMol2Block(content)
-        elif input_format == "pdb":
+        elif input_format in ("pdb", "pdbqt"):
             mol = Chem.MolFromPDBBlock(content)
+
+        # If initial parse failed, try auto-detecting format and re-parsing
+        if mol is None:
+            detected = _detect_ligand_format(content)
+            if detected != input_format:
+                logger.warning(f"Format '{input_format}' failed, auto-detected '{detected}', retrying...")
+                if detected == "smiles":
+                    result = smiles_to_3d(content.strip())
+                    if result:
+                        mol = result["mol"]
+                elif detected in ("sdf", "mol"):
+                    suppl = Chem.SDMolSupplier()
+                    suppl.SetData(content)
+                    for m in suppl:
+                        if m is not None:
+                            mol = m
+                            break
+                    if mol is None:
+                        mol = Chem.MolFromMolBlock(content)
+                elif detected == "mol2":
+                    mol = Chem.MolFromMol2Block(content)
+                elif detected in ("pdb", "pdbqt"):
+                    mol = Chem.MolFromPDBBlock(content)
 
         if mol is None:
             logger.error(f"Failed to parse ligand content (format: {input_format})")
@@ -635,6 +680,35 @@ def _validate_pdbqt(pdbqt_content: str) -> bool:
             return False
 
     return has_atoms
+
+
+def get_ad4_atom_type(atomic_num: int) -> str:
+    """Map atomic number to AutoDock4 atom type."""
+    mapping = {
+        1: "HD",
+        6: "C",
+        7: "NA",
+        8: "OA",
+        9: "F",
+        15: "P",
+        16: "SA",
+        17: "CL",
+        35: "BR",
+        53: "I",
+        5: "B",
+        14: "Si",
+        34: "Se",
+        12: "MG",
+        20: "CA",
+        25: "MN",
+        26: "FE",
+        29: "CU",
+        30: "ZN",
+        19: "K",
+        31: "GA",
+        42: "MO",
+    }
+    return mapping.get(atomic_num, "C")
 
 
 def get_ad4_atom_type_from_symbol(symbol: str) -> str:
