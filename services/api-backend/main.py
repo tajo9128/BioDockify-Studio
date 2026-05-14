@@ -5,6 +5,7 @@ Main gateway that routes requests to specialized services
 
 import os
 import json
+import uuid
 import logging
 import redis
 from contextlib import asynccontextmanager
@@ -230,12 +231,14 @@ async def root():
 async def upload_file(file: UploadFile = File(...)):
     """Upload a molecule or protein file"""
     try:
-        file_path = UPLOADS_DIR / file.filename
+        safe_filename = Path(file.filename).name
+        ext = Path(safe_filename).suffix.lower()
+        server_filename = f"{uuid.uuid4().hex}{ext}"
+        file_path = UPLOADS_DIR / server_filename
         content = await file.read()
         file_path.write_bytes(content)
 
         file_type = "unknown"
-        ext = file_path.suffix.lower()
         if ext in [".pdbqt"]:
             file_type = "protein"
         elif ext in [".sdf", ".mol", ".mol2", ".pdb", ".smi"]:
@@ -244,7 +247,8 @@ async def upload_file(file: UploadFile = File(...)):
             file_type = "smiles"
 
         return {
-            "filename": file.filename,
+            "filename": safe_filename,
+            "server_filename": server_filename,
             "path": str(file_path),
             "type": file_type,
             "size": len(content),

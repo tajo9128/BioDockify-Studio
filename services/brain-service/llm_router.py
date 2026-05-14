@@ -224,4 +224,6 @@ class LLMClient:
             result = response.json()
             return {
                 "content": result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", ""),
-       
+                "model": self.model,
+            }
+

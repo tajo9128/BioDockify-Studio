@@ -102,7 +102,7 @@ services:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
       - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://dockuser:dockpass@postgres:5432/docking
+      - DATABASE_URL=postgresql://dockuser:${POSTGRES_PASSWORD:-dockpass}@postgres:5432/docking
       - API_BACKEND_URL=http://api-backend:8000
       - OLLAMA_URL=http://ollama:11434
       - OLLAMA_BASE_URL=http://ollama:11434/v1
@@ -153,7 +153,7 @@ services:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
       - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://dockuser:dockpass@postgres:5432/docking
+      - DATABASE_URL=postgresql://dockuser:${POSTGRES_PASSWORD:-dockpass}@postgres:5432/docking
       - BRAIN_SERVICE_URL=http://brain-service:8000
       - DOCKING_SERVICE_URL=http://docking-service:8000
       - RDKIT_SERVICE_URL=http://rdkit-service:8000
@@ -206,7 +206,7 @@ services:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
       - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://dockuser:dockpass@postgres:5432/docking
+      - DATABASE_URL=postgresql://dockuser:${POSTGRES_PASSWORD:-dockpass}@postgres:5432/docking
     depends_on:
       redis:
         condition: service_healthy
@@ -253,7 +253,7 @@ services:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
       - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://dockuser:dockpass@postgres:5432/docking
+      - DATABASE_URL=postgresql://dockuser:${POSTGRES_PASSWORD:-dockpass}@postgres:5432/docking
     depends_on:
       redis:
         condition: service_healthy
@@ -293,7 +293,7 @@ services:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
       - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://dockuser:dockpass@postgres:5432/docking
+      - DATABASE_URL=postgresql://dockuser:${POSTGRES_PASSWORD:-dockpass}@postgres:5432/docking
     depends_on:
       redis:
         condition: service_healthy
@@ -513,7 +513,7 @@ services:
     hostname: redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
@@ -539,13 +539,13 @@ services:
     hostname: postgres
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./services/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     environment:
       - POSTGRES_USER=dockuser
-      - POSTGRES_PASSWORD=dockpass
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dockpass}
       - POSTGRES_DB=docking
       - PGDATA=/var/lib/postgresql/data/pgdata
     healthcheck:
@@ -579,7 +579,7 @@ services:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
       - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://dockuser:dockpass@postgres:5432/docking
+      - DATABASE_URL=postgresql://dockuser:${POSTGRES_PASSWORD:-dockpass}@postgres:5432/docking
       - AI_MODE=autonomous
       - DOCKING_SERVICE_URL=http://docking-service:8000
       - RDKIT_SERVICE_URL=http://rdkit-service:8000

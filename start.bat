@@ -23,7 +23,7 @@ echo [OK] Python found
 echo.
 echo Starting BioDockify Studio AI...
 echo Frontend: bundled (React build)
-echo Backend:  all 160+ API routes loaded
+echo Backend:  app.py (main application)
 echo.
 echo Press Ctrl+C to stop the server.
 echo.

@@ -12,7 +12,7 @@ app = FastAPI(title='Biodockify Studio AI', version='2.3.3')
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['*'],
+    allow_origins=['http://localhost:3000', 'http://localhost:8000'],
     allow_credentials=True,
     allow_methods=['*'],
     allow_headers=['*'],
@@ -735,7 +735,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
         function saveProvider(provider) {
             const keyInput = document.getElementById(provider + '-key');
             const apiKey = keyInput ? keyInput.value.trim() : '';
-            localStorage.setItem('api_key_' + provider, apiKey);
+            // NOTE: API keys must be handled server-side; do not persist in localStorage
             const statusEl = document.getElementById(provider + '-status');
             if (apiKey) {
                 statusEl.textContent = 'Saved';
@@ -882,7 +882,7 @@ async def get_suggestions(req: dict):
     
     try:
         from rdkit import Chem
-        from rdkit.Chem import Lipinski, Crippen
+        from rdkit.Chem import Lipinski, Crippen, Descriptors
         
         mol = Chem.MolFromSmiles(smiles)
         if mol:

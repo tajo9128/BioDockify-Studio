@@ -50,12 +50,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger("biodockify")
 
-# ─── Import backend with ALL routes ────────────────────────────────────────
-backend_dir = BASE_DIR / "backend"
-if str(backend_dir) not in sys.path:
-    sys.path.insert(0, str(backend_dir))
+# ─── Import app.py from project root ───────────────────────────────────────
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 
-from main import app  # noqa: E402 — FastAPI app with all 4295 lines of routes
+from app import app  # noqa: E402 — FastAPI app (app.py)
 
 # ─── Mount React frontend ──────────────────────────────────────────────────
 from fastapi.staticfiles import StaticFiles  # noqa: E402
