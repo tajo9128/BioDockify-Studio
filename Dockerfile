@@ -49,7 +49,7 @@ RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 COPY backend/ /app/backend/
 
 # Copy React built frontend into backend static directory
-COPY --from=frontend-builder /app/frontend/dist /app/backend/static/
+COPY --from=frontend-builder /app/backend/static /app/backend/static/
 
 # Create supervisor configuration
 RUN mkdir -p /var/log/supervisor
