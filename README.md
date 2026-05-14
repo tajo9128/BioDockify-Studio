@@ -1,7 +1,7 @@
 # BioDockify Studio
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-4.4.1-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Version-4.4.2-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/Python-3.11-green.svg" alt="Python">
   <img src="https://img.shields.io/badge/License-MIT-purple.svg" alt="License">
 </p>
@@ -120,7 +120,7 @@ Pre-loaded with 12 FDA-approved drugs:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    BioDockify Studio AI v4.4.1                           │
+│                    BioDockify Studio AI v4.4.2                           │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  Frontend (SPA - embedded HTML/JS)                                       │
 │  ├── ChemDraw Panel (smiles-drawer + Ketcher)                          │
@@ -173,7 +173,7 @@ Pre-loaded with 12 FDA-approved drugs:
 | Image | Description |
 |-------|-------------|
 | `tajo9128/biodockify-studio-ai:latest` | Latest release |
-| `tajo9128/biodockify-studio-ai:v4.4.1` | Versioned release |
+| `tajo9128/biodockify-studio-ai:v4.4.2` | Versioned release |
 | `tajo9128/biodockify-studio-ai:full` | Full stack (Vina/GNINA/RF) |
 
 ## Development
