@@ -12,7 +12,7 @@ interface Message {
 }
 
 const SERVICE_CONFIG: Record<string, { label: string; icon: string }> = {
-  brain_service:         { label: 'NanoBOT Brain',       icon: '🧠' },
+  brain_service:         { label: 'BioDockify AI Brain',  icon: '🧠' },
   docking_service:       { label: 'Docking (Vina+GNINA)', icon: '🔬' },
   rdkit_service:         { label: 'RDKit Chemistry',      icon: '⚗️' },
   pharmacophore_service: { label: 'Pharmacophore',        icon: '🧲' },
@@ -136,7 +136,7 @@ export function AIAssistant() {
               )}
             </h1>
             <p className="text-xs text-text-secondary">
-              v4.3.7 · {totalSvc} services · {ctx?.tools_count ?? 0} AI tools
+              v4.4.2 · {totalSvc} services · {ctx?.tools_count ?? 0} AI tools
               {ctx?.provider && ctx.provider !== 'unknown' ? ` · ${ctx.provider}` : ''}
               {ctx?.model && ctx.model !== 'unknown' ? ` / ${ctx.model}` : ''}
             </p>
@@ -336,7 +336,7 @@ export function AIAssistant() {
                 <div className="text-5xl mb-3">🧬</div>
                 <h2 className="text-lg font-bold text-text-primary mb-1">BioDockify AI Commander</h2>
                 <p className="text-sm text-text-secondary mb-1 max-w-sm">
-                  Central intelligence of BioDockify Studio v4.3.7
+                  Central intelligence of BioDockify Studio v4.4.2
                 </p>
                 <p className="text-xs text-text-tertiary mb-6 max-w-xs">
                   I command all sub-agents, monitor all jobs, and guide you through the complete drug discovery pipeline.
