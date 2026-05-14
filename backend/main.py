@@ -4012,6 +4012,8 @@ def _run_batch_docking(job_id: str, request: BatchDockingRequest):
             },
             mode=request.mode,
             batch_size=request.batch_size,
+            exhaustiveness=request.exhaustiveness,
+            num_modes=request.num_modes,
             output_dir=output_dir,
             progress_callback=_progress_cb,
         )
@@ -4032,12 +4034,13 @@ def _run_batch_docking(job_id: str, request: BatchDockingRequest):
             job["status"] = "failed"
             job["stage"] = "failed"
             job["error"] = result.get("error", "Unknown error")
-            job["errors_detail"] = result.get("errors", [])
+            job["errors_detail"] = result.get("errors_detail", [])
 
     except Exception as e:
         job["status"] = "failed"
         job["stage"] = "failed"
         job["error"] = str(e)
+        job["errors_detail"] = [{"smiles": "", "error": str(e)}]
         logger.exception(f"Batch docking job {job_id} failed")
 
 
@@ -4053,9 +4056,13 @@ def batch_docking_progress(job_id: str):
     gnina_done = job.get("gnina_done", 0)
     gnina_total = job.get("gnina_total", 0)
 
-    # Overall progress: Vina is 60% of work, GNINA is 40%
-    vina_pct = (vina_done / total) * 60 if total > 0 else 0
-    gnina_pct = (gnina_done / max(gnina_total, 1)) * 40 if gnina_total > 0 else 0
+    # Overall progress: Vina is 60% of work, GNINA is 40% — unless no GNINA ligands selected
+    if gnina_total > 0:
+        vina_pct = (vina_done / total) * 60 if total > 0 else 0
+        gnina_pct = (gnina_done / gnina_total) * 40
+    else:
+        vina_pct = (vina_done / total) * 100 if total > 0 else 0
+        gnina_pct = 0
     overall = round(vina_pct + gnina_pct, 1)
 
     return {

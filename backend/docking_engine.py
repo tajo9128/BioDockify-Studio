@@ -2237,6 +2237,8 @@ def batch_dock(
     grid_config: Dict[str, float],
     mode: str = "accurate",
     batch_size: int = 50,
+    exhaustiveness: int = 8,
+    num_modes: int = 9,
     max_vina_workers: int = 4,
     max_gnina_workers: int = 2,
     output_dir: str = "/tmp",
@@ -2284,7 +2286,7 @@ def batch_dock(
         return {
             "success": False,
             "error": "No valid SMILES provided",
-            "errors": errors,
+            "errors_detail": errors,
         }
 
     # Check available engines
@@ -2295,7 +2297,21 @@ def batch_dock(
         return {
             "success": False,
             "error": "Vina not available",
-            "errors": errors,
+            "errors_detail": errors,
+        }
+
+    # Prepare receptor once for reuse
+    receptor_pdbqt = None
+    if receptor_content:
+        prep = prepare_protein_from_content(receptor_content, output_dir)
+        if prep:
+            receptor_pdbqt = prep["pdbqt_path"]
+
+    if not receptor_pdbqt:
+        return {
+            "success": False,
+            "error": "Receptor preparation failed",
+            "errors_detail": errors,
         }
 
     gpu_info = check_gpu_cuda()
@@ -2318,18 +2334,24 @@ def batch_dock(
 
     def _dock_single(lig):
         try:
-            result = smart_dock(
-                receptor_content=receptor_content,
-                ligand_content=lig["smiles"],
-                input_format="smiles",
+            # Prepare ligand
+            ligand_prep = prepare_ligand_from_content(
+                lig["smiles"], "smiles", output_dir
+            )
+            if not ligand_prep:
+                raise ValueError("Ligand preparation failed")
+
+            result = run_vina_docking(
+                receptor_pdbqt=receptor_pdbqt,
+                ligand_pdbqt=ligand_prep["pdbqt_path"],
                 center_x=grid_config.get("center_x", 0),
                 center_y=grid_config.get("center_y", 0),
                 center_z=grid_config.get("center_z", 0),
                 size_x=grid_config.get("size_x", 20),
                 size_y=grid_config.get("size_y", 20),
                 size_z=grid_config.get("size_z", 20),
-                exhaustiveness=8,
-                num_modes=9,
+                exhaustiveness=exhaustiveness,
+                num_modes=num_modes,
                 output_dir=output_dir,
             )
             if result.get("success") and result.get("results"):
@@ -2338,6 +2360,7 @@ def batch_dock(
                 lig["vina_mode"] = best.get("mode")
                 lig["vina_files"] = result.get("files", {})
                 lig["vina_success"] = True
+                lig["ligand_pdbqt_path"] = ligand_prep["pdbqt_path"]
             else:
                 lig["vina_score"] = 0.0  # 0.0 means no binding
                 lig["vina_success"] = False
@@ -2368,7 +2391,7 @@ def batch_dock(
         return {
             "success": False,
             "error": "All Vina docking attempts failed",
-            "errors": errors
+            "errors_detail": errors
             + [
                 {"smiles": l["smiles"], "error": l.get("vina_error", "Failed")}
                 for l in vina_failed
@@ -2410,16 +2433,16 @@ def batch_dock(
 
             try:
                 result = run_gnina_docking(
-                    receptor_pdbqt=None,
-                    ligand_pdbqt=None,
+                    receptor_pdbqt=receptor_pdbqt,
+                    ligand_pdbqt=lig.get("ligand_pdbqt_path"),
                     center_x=grid_config.get("center_x", 0),
                     center_y=grid_config.get("center_y", 0),
                     center_z=grid_config.get("center_z", 0),
                     size_x=grid_config.get("size_x", 20),
                     size_y=grid_config.get("size_y", 20),
                     size_z=grid_config.get("size_z", 20),
-                    exhaustiveness=8,
-                    num_modes=9,
+                    exhaustiveness=exhaustiveness,
+                    num_modes=num_modes,
                     output_dir=output_dir,
                 )
                 if result.get("success") and result.get("results"):
@@ -2478,6 +2501,9 @@ def batch_dock(
             lig["gnina_score"] = None
             lig["rf_score"] = None
             lig["gnina_success"] = False
+        # Mark GNINA as done (skipped) so progress reaches 100%
+        progress["gnina_done"] = progress["gnina_total"]
+        _report()
 
     # Step 5: Diversity filtering BEFORE composite scoring
     # Sort by GNINA score first to pick the best diverse set
@@ -2491,6 +2517,9 @@ def batch_dock(
     top_5 = filter_diversity(candidates_for_diversity, threshold=0.85, top_n=5)
 
     # Step 6: Composite scoring (includes diversity bonus)
+    progress["stage"] = "ranking"
+    _report()
+
     for lig in top_5:
         lig["final_score"] = compute_composite_score(lig)
         lig["reasons"] = generate_reasons(lig)
@@ -2515,6 +2544,7 @@ def batch_dock(
     # Clean up non-serializable objects before returning
     for lig in vina_done:
         lig.pop("fp", None)
+        lig.pop("ligand_pdbqt_path", None)
 
     progress["stage"] = "completed"
     _report()

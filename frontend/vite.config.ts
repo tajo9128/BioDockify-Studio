@@ -108,6 +108,10 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      '/batch': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
       '/brain': {
         target: 'http://localhost:8010',
         changeOrigin: true,
