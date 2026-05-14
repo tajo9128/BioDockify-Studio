@@ -13,6 +13,7 @@ import os
 import json
 import logging
 import uuid
+from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
@@ -43,7 +44,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

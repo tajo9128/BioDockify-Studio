@@ -8,7 +8,7 @@ import os
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://dockuser:dockpass@postgres:5432/docking",
+    f"postgresql://dockuser:{os.getenv('POSTGRES_PASSWORD', 'dockpass')}@postgres:5432/docking",
 )
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_size=5, max_overflow=10)

@@ -53,6 +53,13 @@ UPLOADS_DIR = Path("/app/uploads")
 STORAGE_DIR.mkdir(exist_ok=True)
 UPLOADS_DIR.mkdir(exist_ok=True)
 
+
+def _safe_filename(filename: str) -> str:
+    safe_name = Path(filename or "").name
+    if not safe_name or safe_name in {".", ".."} or safe_name != (filename or ""):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    return safe_name
+
 # Auth settings
 API_KEY = os.getenv("API_KEY", "")  # Set to enable auth
 AUTH_DISABLED = os.getenv("AUTH_DISABLED", "false").lower() == "true"
@@ -164,9 +171,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"]
-    if AUTH_DISABLED
-    else ["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -216,7 +221,8 @@ async def root():
 async def upload_file(file: UploadFile = File(...)):
     """Upload a molecule or protein file"""
     try:
-        file_path = UPLOADS_DIR / file.filename
+        safe_name = _safe_filename(file.filename)
+        file_path = UPLOADS_DIR / safe_name
         content = await file.read()
         file_path.write_bytes(content)
 
@@ -230,7 +236,7 @@ async def upload_file(file: UploadFile = File(...)):
             file_type = "smiles"
 
         return {
-            "filename": file.filename,
+            "filename": safe_name,
             "path": str(file_path),
             "type": file_type,
             "size": len(content),
@@ -2267,15 +2273,15 @@ async def run_security_scan():
 async def download_file(filename: str):
     """Download a file from storage"""
     from fastapi.responses import FileResponse
-    import os
 
-    storage_path = STORAGE_DIR / filename
-    uploads_path = UPLOADS_DIR / filename
+    safe_name = _safe_filename(filename)
+    storage_path = STORAGE_DIR / safe_name
+    uploads_path = UPLOADS_DIR / safe_name
 
     if storage_path.exists():
-        return FileResponse(storage_path, filename=filename)
+        return FileResponse(storage_path, filename=safe_name)
     elif uploads_path.exists():
-        return FileResponse(uploads_path, filename=filename)
+        return FileResponse(uploads_path, filename=safe_name)
     else:
         raise HTTPException(status_code=404, detail="File not found")
 

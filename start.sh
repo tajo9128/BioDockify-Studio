@@ -95,7 +95,7 @@ open_browser() {
             sleep 2 && start http://localhost:8000 &>/dev/null || true
             ;;
         Linux*)
-            sleep 2 && xdg-open http://localhost:3000 &>/dev/null || true
+            sleep 2 && xdg-open http://localhost:8000 &>/dev/null || true
             ;;
     esac
 }
