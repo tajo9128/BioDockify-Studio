@@ -210,11 +210,12 @@ async def get_llm_settings() -> dict:
             return response.json()
     except Exception as e:
         logger.error(f"Failed to fetch LLM settings: {e}")
+        # Default to Ollama when api-backend is unreachable
         return {
-            "provider": "openai",
-            "model": "gpt-4o-mini",
+            "provider": "ollama",
+            "model": os.getenv("OLLAMA_MODEL", "llama3.2"),
             "api_key": "",
-            "base_url": "https://api.openai.com/v1",
+            "base_url": f"http://{os.getenv('OLLAMA_HOST', 'host.docker.internal:11434')}/v1",
             "temperature": 0.0,
             "max_tokens": 4096,
         }
@@ -230,6 +231,13 @@ async def get_provider() -> LLMProvider:
 
     if provider_type == "anthropic":
         return AnthropicProvider(api_key, model)
+    elif provider_type == "ollama":
+        # Ollama uses OpenAI-compatible endpoint at /v1/chat/completions
+        # Ensure base_url has /v1 suffix for compatibility
+        ollama_url = base_url.rstrip("/")
+        if not ollama_url.endswith("/v1"):
+            ollama_url = f"{ollama_url}/v1"
+        return OpenAIProvider(api_key or "ollama", ollama_url, model)
     else:
         return OpenAIProvider(api_key, base_url, model)
 
@@ -524,8 +532,10 @@ async def chat_status():
     
     try:
         if provider == "ollama":
+            # Strip /v1 suffix for native Ollama API endpoint
+            ollama_base = base_url.rstrip("/").removesuffix("/v1")
             async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{base_url}/api/tags")
+                response = await client.get(f"{ollama_base}/api/tags")
                 if response.status_code == 200:
                     data = response.json()
                     models = [m.get("name", "") for m in data.get("models", [])]

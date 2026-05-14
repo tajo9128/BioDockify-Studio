@@ -285,14 +285,15 @@ class LLMRouter:
 
     def _init_providers(self):
         """Initialize provider instances with URL normalization for Docker."""
+        config_provider = self._config.get("provider", "ollama")
         saved_model = (
             self._config.get("model")
-            if self._config.get("provider") == "ollama"
+            if config_provider == "ollama"
             else None
         )
         saved_url = (
             self._config.get("base_url")
-            if self._config.get("provider") == "ollama"
+            if config_provider == "ollama"
             else None
         )
 
@@ -311,11 +312,6 @@ class LLMRouter:
         logger.info(
             f"LLMRouter initialized (ollama url={ollama_base}, model={self.ollama.model})"
         )
-
-    def reset(self):
-        """Reset provider detection and re-read config."""
-        self._config = _load_config()
-        self._init_providers()
 
     def _get_config_provider(self) -> str:
         return self._config.get("provider", "ollama")

@@ -1995,6 +1995,21 @@ LLM_SETTINGS = {
     "max_tokens": 2048,
 }
 
+# Load persisted config from llm_config.json on startup (if it exists)
+try:
+    from ai.llm_router import _load_config as _load_llm_config
+
+    _saved_llm = _load_llm_config()
+    if _saved_llm:
+        LLM_SETTINGS.update(
+            {k: v for k, v in _saved_llm.items() if v or k == "api_key"}
+        )
+        logger.info(
+            f"Loaded persisted LLM config: provider={_saved_llm.get('provider')}, model={_saved_llm.get('model')}"
+        )
+except Exception as _e:
+    logger.warning(f"Could not load persisted LLM config: {_e}")
+
 
 @app.get("/llm/settings")
 def llm_settings():
@@ -2060,6 +2075,38 @@ class LLMTestRequest(BaseModel):
     base_url: str = ""
 
 
+def _auto_save_on_test_success(req: LLMTestRequest, resolved_url: str):
+    """Auto-save LLM settings when a connection test succeeds.
+    This ensures the LLMRouter uses the same config that was just tested."""
+    try:
+        from ai.llm_router import save_config, get_router
+
+        # For Ollama, save the resolved URL with /v1 suffix for OpenAI compat
+        base_url = req.base_url or ""
+        if req.provider == "ollama" and not base_url:
+            base_url = f"{resolved_url}/v1"
+
+        config = {
+            "provider": req.provider,
+            "model": req.model,
+            "api_key": req.api_key,
+            "base_url": base_url,
+        }
+        save_config(config)
+
+        # Update in-memory LLM_SETTINGS too
+        LLM_SETTINGS.update(config)
+
+        # Reset router to pick up new config
+        router = get_router()
+        router.reset()
+        logger.info(
+            f"Auto-saved LLM settings after successful test: provider={req.provider}, model={req.model}"
+        )
+    except Exception as e:
+        logger.warning(f"Failed to auto-save LLM settings after test: {e}")
+
+
 @app.post("/llm/test")
 def llm_test(req: LLMTestRequest):
     """Test LLM connection with actual API call. Handles Ollama natively and all OpenAI-compatible APIs."""
@@ -2107,6 +2154,8 @@ def llm_test(req: LLMTestRequest):
                 data = response.json()
                 content = data.get("message", {}).get("content", "")
                 logger.info(f"LLM test successful (Ollama): {content[:50]}")
+                # Auto-save settings on successful test so LLMRouter picks them up
+                _auto_save_on_test_success(req, test_url)
                 return {"status": "ok", "response": content[:100], "error": None}
             else:
                 return {
@@ -2147,6 +2196,8 @@ def llm_test(req: LLMTestRequest):
                     data.get("choices", [{}])[0].get("message", {}).get("content", "")
                 )
                 logger.info(f"LLM test successful: {content[:50]}")
+                # Auto-save settings on successful test so LLMRouter picks them up
+                _auto_save_on_test_success(req, test_url)
                 return {"status": "ok", "response": content[:100], "error": None}
             else:
                 return {
