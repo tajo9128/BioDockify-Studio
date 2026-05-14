@@ -5,7 +5,7 @@ import { locales, getLocale, setLocale, Locale } from '@/i18n'
 
 const APP_VERSION = '2.4.0'
 
-// Nanobot Plugins (channels/providers)
+// BioDockify AI Plugins (channels/providers)
 const PLUGIN_CHANNELS = [
   { id: 'pubchem', name: 'PubChem', icon: '🧪', enabled: true, description: 'Fetch compounds and properties from PubChem' },
   { id: 'pdb', name: 'PDB', icon: '🧬', enabled: true, description: 'Download protein structures from RCSB PDB' },

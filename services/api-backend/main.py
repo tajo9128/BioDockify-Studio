@@ -1143,7 +1143,7 @@ def list_db_jobs(limit: int = 50, db: Session = Depends(get_db)):
 
 
 # ============================================================
-# Nanobot Memory - User profiles, long-term memory, conversation history
+# BioDockify AI Memory - User profiles, long-term memory, conversation history
 # ============================================================
 
 

@@ -1,8 +1,8 @@
-# Brain Service - Nanobot AI Agent (Planner only)
+# Brain Service - BioDockify AI Agent (Planner only)
 FROM python:3.11-slim
 
 LABEL maintainer="BioDockify"
-LABEL description="Brain Service - Nanobot AI Planner"
+LABEL description="Brain Service - BioDockify AI Planner"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1

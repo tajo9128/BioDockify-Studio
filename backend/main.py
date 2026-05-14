@@ -237,13 +237,13 @@ def ollama_status():
 
 
 # ============================================
-# SYSTEM MONITORING ENDPOINTS - For Nanobot
+# SYSTEM MONITORING ENDPOINTS - For BioDockify AI
 # ============================================
 
 
 @app.get("/system/status")
 def system_status():
-    """Get comprehensive system status for Nanobot monitoring"""
+    """Get comprehensive system status for BioDockify AI monitoring"""
     try:
         import psutil
         import requests
@@ -393,7 +393,7 @@ def system_status():
 
 @app.get("/system/logs")
 def system_logs(limit: int = 50):
-    """Get recent system logs for Nanobot analysis"""
+    """Get recent system logs for BioDockify AI analysis"""
     logs = []
     try:
         log_file = os.path.join(STORAGE_DIR, "docking.log")
@@ -409,7 +409,7 @@ def system_logs(limit: int = 50):
 
 @app.get("/system/errors")
 def system_errors():
-    """Get recent errors and failures for Nanobot to analyze"""
+    """Get recent errors and failures for BioDockify AI to analyze"""
     recent_jobs = get_all_jobs(limit=20)
     failed_jobs = [j for j in recent_jobs if j.get("status") == "failed"]
 
@@ -435,7 +435,7 @@ def system_errors():
 
 @app.post("/system/report-issue")
 def report_issue(req: Dict[str, Any]):
-    """Report an issue that Nanobot can help diagnose"""
+    """Report an issue that BioDockify AI can help diagnose"""
     issue_type = req.get("type", "general")
     description = req.get("description", "")
     context = req.get("context", {})
@@ -445,7 +445,7 @@ def report_issue(req: Dict[str, Any]):
         f"[ISSUE REPORT] Type: {issue_type}, Description: {description}, Context: {context}"
     )
 
-    # Store in database for Nanobot to access
+    # Store in database for BioDockify AI to access
     issue_log = {
         "type": issue_type,
         "description": description,
@@ -456,13 +456,13 @@ def report_issue(req: Dict[str, Any]):
     return {
         "status": "reported",
         "issue": issue_log,
-        "message": "Issue reported to Nanobot. I'm monitoring the system and will help diagnose the problem.",
+        "message": "Issue reported to BioDockify AI. I'm monitoring the system and will help diagnose the problem.",
     }
 
 
 @app.get("/system/diagnostics")
 def system_diagnostics():
-    """Run diagnostic checks and return results for Nanobot"""
+    """Run diagnostic checks and return results for BioDockify AI"""
     diagnostics = []
 
     # Check RDKit
@@ -1333,7 +1333,7 @@ def api_ai_job_explain(req: JobExplainRequest):
 
     log_snippet = (row.get("log_text") or "")[:2000]
 
-    context = f"""You are BioDockify AI (NanoBot), an autonomous drug discovery brain built into BioDockify Studio AI. You have advanced AI capabilities: Experiment Memory (ChromaDB-backed), Meta-Parameter Self-Learning (per protein family), Active Learning + Bayesian Optimization, Adversarial Critique Agent, Knowledge Graph, NL-to-DAG Compiler, and 7 CrewAI agents coordinated by an Orchestrator.
+    context = f"""You are BioDockify AI (BioDockify AI), an autonomous drug discovery brain built into BioDockify Studio AI. You have advanced AI capabilities: Experiment Memory (ChromaDB-backed), Meta-Parameter Self-Learning (per protein family), Active Learning + Bayesian Optimization, Adversarial Critique Agent, Knowledge Graph, NL-to-DAG Compiler, and 7 CrewAI agents coordinated by an Orchestrator.
 
 The user is asking about docking job ID: {req.job_id}
 Job name: {row.get("job_name")}

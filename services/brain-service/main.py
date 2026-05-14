@@ -1,8 +1,8 @@
 """
 Docking Studio v2.0 - Enhanced Brain Service
-Simplified nanobot-inspired architecture for drug discovery
+Simplified bioDockify AI-inspired architecture for drug discovery
 
-Key features from nanobot:
+Key features from bioDockify AI:
 - Tool registry with JSON schema validation
 - Streaming support
 - Conversation memory
@@ -37,7 +37,7 @@ STORAGE_DIR.mkdir(exist_ok=True)
 UPLOADS_DIR.mkdir(exist_ok=True)
 
 app = FastAPI(
-    title="Nanobot Brain Service",
+    title="BioDockify AI Brain Service",
     description="AI Agent for Docking Studio with drug discovery tools",
     version="2.0.0",
 )
@@ -243,7 +243,7 @@ async def get_provider() -> LLMProvider:
 
 
 def create_system_prompt() -> str:
-    return """You are NanoBOT, an elite AI drug discovery scientist that surpasses BIOVIA Discovery Studio's AI capabilities.
+    return """You are BioDockify AI, an elite AI drug discovery scientist that surpasses BIOVIA Discovery Studio's AI capabilities.
 
 ## Your Core Strengths
 
@@ -369,7 +369,7 @@ async def health_check():
 async def root():
     settings = await get_llm_settings()
     return {
-        "service": "Nanobot Brain Service",
+        "service": "BioDockify AI Brain Service",
         "version": "2.0.0",
         "model": settings.get("model", "unknown"),
         "provider": settings.get("provider", "unknown"),

@@ -14,7 +14,7 @@
 | **Shape Screening** | ROCS | None | 🔴 No shape matching |
 | **Visualization** | 3D + 2D diagrams, surfaces | 3Dmol.js + Plotly | 🟡 No 2D interaction diagrams |
 | **Automation** | Pipeline Pilot (visual) | Redis + Celery (code) | 🟡 No visual pipeline builder |
-| **AI/Brain** | BIOVIA AI (limited) | Nanobot + LLM (good foundation) | 🟢 Best-in-class for open-source |
+| **AI/Brain** | BIOVIA AI (limited) | BioDockify AI + LLM (good foundation) | 🟢 Best-in-class for open-source |
 | **API/Web** | Limited REST | nginx → FastAPI | 🟢 Fully web-based |
 | **QM Calculations** | DMol3 DFT | None | 🔴 No quantum mechanics |
 | **Reporting** | Pipeline Pilot reports | Manual export | 🔴 No automated report gen |
@@ -31,7 +31,7 @@
 - **brain-service** — LLM orchestration + 11 tools
 - **redis-worker** — Celery background tasks
 
-### Nanobot Brain
+### BioDockify AI Brain
 - Tool registry with 11 tools (docking, RDKit, pharmacophore, PubChem)
 - OpenAI, Anthropic, Ollama, DeepSeek, Zhipu AI, Groq, LM Studio
 - Streaming chat, conversation memory
@@ -77,7 +77,7 @@
 
 ### 🟢 What We Match or Exceed
 
-1. **AI/Brain Agent** — Nanobot + LLM is BETTER than Discovery Studio's limited BIOVIA AI. Natural language tool orchestration is a strong differentiator.
+1. **AI/Brain Agent** — BioDockify AI + LLM is BETTER than Discovery Studio's limited BIOVIA AI. Natural language tool orchestration is a strong differentiator.
 
 2. **Web-based Architecture** — Fully browser-based vs Discovery Studio's desktop Java app.
 
@@ -93,7 +93,7 @@
 
 ### Phase 1: Brain & Automation (High Impact, Low Effort)
 
-**Goal: Make nanobot do Discovery Studio-style multi-step workflows**
+**Goal: Make bioDockify AI do Discovery Studio-style multi-step workflows**
 
 1. **[HIGH] Add 15+ new brain tools:**
    - `calculate_admet` — Lipinski, Veber, hERG liability, BBB penetration
@@ -106,7 +106,7 @@
    - `fetch_bindingsite` — Extract binding site residues from PDB
 
 2. **[HIGH] Update system prompt:**
-   - Teach Nanobot to chain tools for virtual screening workflows
+   - Teach BioDockify AI to chain tools for virtual screening workflows
    - Add Discovery Studio-style reasoning: "User wants to find hits → suggest pharmacophore → screen → dock → rank → filter ADMET → report"
    - Include tool descriptions for all new tools
 
@@ -175,17 +175,17 @@
 
 ---
 
-## How Nanobot Brain Adds Discovery Studio Value
+## How BioDockify AI Brain Adds Discovery Studio Value
 
-Nanobot is actually the **secret weapon** vs Discovery Studio because:
+BioDockify AI is actually the **secret weapon** vs Discovery Studio because:
 
 1. **Natural language automation** — "Find all compounds that dock better than -9 kcal/mol, pass Lipinski, and are novel compared to training set" is a 30-second query that would require a Pipeline Pilot expert in Discovery Studio.
 
-2. **AI-guided exploration** — Nanobot can reason about which tools to chain, unlike Pipeline Pilot's rigid nodes.
+2. **AI-guided exploration** — BioDockify AI can reason about which tools to chain, unlike Pipeline Pilot's rigid nodes.
 
 3. **Self-improving** — As users interact, the brain learns preferred workflows.
 
-4. **No-code pipelines** — Anyone can build Discovery Studio-style workflows by talking to Nanobot.
+4. **No-code pipelines** — Anyone can build Discovery Studio-style workflows by talking to BioDockify AI.
 
 ### Key Automation Workflows to Enable:
 
@@ -193,7 +193,7 @@ Nanobot is actually the **secret weapon** vs Discovery Studio because:
 User: "Find hits for COVID-3CL protease from this library, 
        filter for drug-likeness, rank by docking score"
        
-Nanobot chain:
+BioDockify AI chain:
 1. fetch_protein("7BQY") 
 2. generate_pharmacophore(receptor_pdb=...)
 3. screen_library(library=uploaded, min_features=4)

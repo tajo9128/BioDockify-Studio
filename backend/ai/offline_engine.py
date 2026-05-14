@@ -23,9 +23,9 @@ class OfflineAssistant:
                 "what is your name",
                 "who am i talking to",
                 "introduce yourself",
-                "what is nanobot",
+                "what is bioDockify AI",
             ],
-            "response": "I am BioDockify AI, also known as NanoBot — the intelligent AI assistant built into BioDockify Studio AI. I'm powered by a CrewAI multi-agent system with 6 specialized AI agents at my command: a Molecular Docking Specialist, Computational Chemistry Expert, Pharmacophore Modeling Expert, ADMET Prediction Specialist, Drug Discovery Analysis Expert, and QSAR Modeling Specialist, all coordinated by a Drug Discovery Orchestrator. I'm here to help you with drug discovery!",
+            "response": "I am BioDockify AI, also known as BioDockify AI — the intelligent AI assistant built into BioDockify Studio AI. I'm powered by a CrewAI multi-agent system with 6 specialized AI agents at my command: a Molecular Docking Specialist, Computational Chemistry Expert, Pharmacophore Modeling Expert, ADMET Prediction Specialist, Drug Discovery Analysis Expert, and QSAR Modeling Specialist, all coordinated by a Drug Discovery Orchestrator. I'm here to help you with drug discovery!",
         },
         "about": {
             "keywords": [
@@ -35,7 +35,7 @@ class OfflineAssistant:
                 "about this software",
                 "about this app",
             ],
-            "response": "BioDockify Studio AI is a free, open-source alternative to BIOVIA Discovery Studio and Schrödinger. It includes molecular docking (Vina, GNINA, RF-Score), batch docking with composite scoring (GNINA 50% + LE 25% + QED 15% + diversity 10%), pharmacophore modeling, QSAR modeling, ADMET prediction, molecular dynamics, ChemDraw, ligand modification, 3D visualization, RMSD analysis, interaction analysis, and AI-powered assistance via Ollama or cloud APIs. I (NanoBot) coordinate a team of 6 CrewAI agents to help you with drug discovery tasks.",
+            "response": "BioDockify Studio AI is a free, open-source alternative to BIOVIA Discovery Studio and Schrödinger. It includes molecular docking (Vina, GNINA, RF-Score), batch docking with composite scoring (GNINA 50% + LE 25% + QED 15% + diversity 10%), pharmacophore modeling, QSAR modeling, ADMET prediction, molecular dynamics, ChemDraw, ligand modification, 3D visualization, RMSD analysis, interaction analysis, and AI-powered assistance via Ollama or cloud APIs. I (BioDockify AI) coordinate a team of 6 CrewAI agents to help you with drug discovery tasks.",
         },
         "features": {
             "keywords": [
@@ -45,7 +45,7 @@ class OfflineAssistant:
                 "modules",
                 "tools",
             ],
-            "response": "BioDockify Studio AI includes: 1) Molecular Docking (Vina, GNINA, RF-Score with smart energy-based routing), 2) Batch Docking (composite scoring with GNINA 50% + LE 25% + QED 15% + diversity 10%, SQLite cache, failed GNINA fallback), 3) Pharmacophore Modeling, 4) QSAR Modeling (ML training with Y-scrambling, SHAP analysis), 5) ADMET Prediction (Caco-2, BBB, CYP450, hERG, AMES), 6) Molecular Dynamics (OpenMM, GPU-accelerated), 7) ChemDraw (Ketcher), 8) Ligand Modifier (RDKit transformations), 9) 3D Viewer (3Dmol.js), 10) RMSD Analysis, 11) Interaction Analysis, 12) AI Assistant (NanoBot with CrewAI multi-agent system), 13) Knowledge Graph, 14) Natural Language Workflow compiler (NL-to-DAG).",
+            "response": "BioDockify Studio AI includes: 1) Molecular Docking (Vina, GNINA, RF-Score with smart energy-based routing), 2) Batch Docking (composite scoring with GNINA 50% + LE 25% + QED 15% + diversity 10%, SQLite cache, failed GNINA fallback), 3) Pharmacophore Modeling, 4) QSAR Modeling (ML training with Y-scrambling, SHAP analysis), 5) ADMET Prediction (Caco-2, BBB, CYP450, hERG, AMES), 6) Molecular Dynamics (OpenMM, GPU-accelerated), 7) ChemDraw (Ketcher), 8) Ligand Modifier (RDKit transformations), 9) 3D Viewer (3Dmol.js), 10) RMSD Analysis, 11) Interaction Analysis, 12) AI Assistant (BioDockify AI with CrewAI multi-agent system), 13) Knowledge Graph, 14) Natural Language Workflow compiler (NL-to-DAG).",
         },
         "crewai": {
             "keywords": [
@@ -162,7 +162,7 @@ class OfflineAssistant:
         },
         "help": {
             "keywords": ["help", "what can you", "commands"],
-            "response": "I am NanoBot, your BioDockify AI assistant. I can help with: BioDockify Studio AI features, CrewAI multi-agent system, Vina scoring, GNINA CNN, Random Forest, consensus scoring, batch docking, QSAR modeling, ADMET, pharmacophores, molecular dynamics, hydrogen bonds, hydrophobic interactions, RMSD, binding pockets, grid parameters, exhaustiveness, and docking basics. I have 6 specialized AI agents ready to help with complex drug discovery tasks!",
+            "response": "I am BioDockify AI, your BioDockify AI assistant. I can help with: BioDockify Studio AI features, CrewAI multi-agent system, Vina scoring, GNINA CNN, Random Forest, consensus scoring, batch docking, QSAR modeling, ADMET, pharmacophores, molecular dynamics, hydrogen bonds, hydrophobic interactions, RMSD, binding pockets, grid parameters, exhaustiveness, and docking basics. I have 6 specialized AI agents ready to help with complex drug discovery tasks!",
         },
     }
 

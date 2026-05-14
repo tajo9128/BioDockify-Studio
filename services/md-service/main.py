@@ -1,6 +1,6 @@
 """
 MD Service - OpenMM molecular dynamics simulation + MD-Suite Integration
-Features: Dynamics, Minimization, MMGBSA, Analysis, Nanobot Monitoring, Notifications
+Features: Dynamics, Minimization, MMGBSA, Analysis, BioDockify AI Monitoring, Notifications
 """
 
 import os
@@ -118,7 +118,7 @@ def _get_job_status(job_id: str) -> Optional[Dict]:
 
 
 def _persist_to_db(job_id: str, request: "DynamicsRequest", result: Dict[str, Any]):
-    """Persist completed MD job result to PostgreSQL and Nanobot memory via api-backend."""
+    """Persist completed MD job result to PostgreSQL and BioDockify AI memory via api-backend."""
     try:
         payload = {
             "job_uuid": job_id,
@@ -163,7 +163,7 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 60)
     logger.info("MD Service starting up...")
     logger.info(f"Redis available: {redis_available}")
-    logger.info("MD-Suite Nanobot integration: ACTIVE")
+    logger.info("MD-Suite BioDockify AI integration: ACTIVE")
     logger.info("Engine: OpenMM (Auto-detect: GPU preferred, CPU fallback)")
     logger.info("=" * 60)
     yield
@@ -172,7 +172,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="MD Service API",
-    description="OpenMM MD simulation + MD-Suite Nanobot analysis (RMSD/RMSF/Energy/Gyration/SASA/H-bonds) + Notifications",
+    description="OpenMM MD simulation + MD-Suite BioDockify AI analysis (RMSD/RMSF/Energy/Gyration/SASA/H-bonds) + Notifications",
     version="2.0.0",
     lifespan=lifespan,
 )
@@ -196,7 +196,7 @@ def health():
             "minimize",
             "mmgbsa",
             "analysis",
-            "nanobot_monitoring",
+            "biodockify_ai_monitoring",
             "notifications",
             "publication_packager",
         ],

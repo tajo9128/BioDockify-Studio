@@ -1,16 +1,16 @@
-# Plan: Replace Nanobot with CrewAI
+# Plan: Replace BioDockify AI with CrewAI
 
  BioDockify Studio AI
 
 ## Overview
 
-Replace the current custom Nanobot brain-service with **CrewAI** — a multi-agent orchestration framework (47.8k stars on GitHub, MIT license, Python >=3.10, <3.14).
+Replace the current custom BioDockify AI brain-service with **CrewAI** — a multi-agent orchestration framework (47.8k stars on GitHub, MIT license, Python >=3.10, <3.14).
 
  CrewAI provides role drug discovery platform with specialized autonomous agents (Crews) that collaborate on complex drug discovery tasks like virtual screening, lead optimization, ADMET prediction, and docking analysis.
 
 ## Architecture Comparison
 
-| Current (Nanobot) | New (CrewAI) |
+| Current (BioDockify AI) | New (CrewAI) |
 |---|---|
 | Custom `ToolRegistry` + `BaseTool` | CrewAI `Agent` + `Task` + `Crew` classes |
 | Custom `LLMProvider` + `LLMClient` | CrewAI native LLM (via env vars or Ollama, OpenAI, etc.) |

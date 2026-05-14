@@ -1,5 +1,5 @@
 """
-External database integrations for Nanobot Brain
+External database integrations for BioDockify AI Brain
 PubChem, PDB, ChEMBL APIs
 """
 

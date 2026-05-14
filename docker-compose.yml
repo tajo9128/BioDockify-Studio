@@ -56,7 +56,7 @@ services:
       - docking-network
 
   # =========================================================
-  # Brain Service - Nanobot AI Brain (Strategist)
+  # Brain Service - BioDockify AI Brain (Strategist)
   # =========================================================
   brain-service:
     build:
