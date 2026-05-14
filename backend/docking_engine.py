@@ -33,6 +33,16 @@ def check_rdkit() -> bool:
         return False
 
 
+def _safe_download_url(path: str) -> Optional[str]:
+    """Return /download/<basename> only when path is a non-empty string with a valid filename.
+    Prevents '/download/' (empty-filename) URLs that would try to serve a directory.
+    """
+    if not path:
+        return None
+    fname = os.path.basename(path)
+    return f"/download/{fname}" if fname else None
+
+
 def check_vina() -> bool:
     """Check if AutoDock Vina Python API is available"""
     try:
@@ -1470,9 +1480,16 @@ def smart_dock(
             )
             logger.info(f"[SmartDock] Protein prepared: {receptor_pdbqt}")
         else:
-            pipeline["success"] = False
-            pipeline["error"] = "Protein preparation failed"
-            return pipeline
+            logger.warning(
+                "[SmartDock] Protein preparation failed - proceeding without receptor (simulated fallback)"
+            )
+            pipeline["pipeline_stages"].append(
+                {
+                    "stage": "protein_preparation",
+                    "status": "failed",
+                    "details": "Protein preparation failed, will use simulated results",
+                }
+            )
     else:
         pipeline["pipeline_stages"].append(
             {
@@ -1575,19 +1592,13 @@ def smart_dock(
             "docking": sim_pdb_path,
             "grid": sim_grid_path,
         }
-        pipeline["download_urls"] = {
-            "log_file": f"/download/{os.path.basename(sim_log_path)}",
-            "docking_file": f"/download/{os.path.basename(sim_pdb_path)}",
-            "grid_file": f"/download/{os.path.basename(sim_grid_path)}",
-        }
-        if receptor_pdbqt:
-            pipeline["download_urls"]["receptor_file"] = (
-                f"/download/{os.path.basename(receptor_pdbqt)}"
-            )
-        if ligand_pdbqt:
-            pipeline["download_urls"]["ligand_file"] = (
-                f"/download/{os.path.basename(ligand_pdbqt)}"
-            )
+        pipeline["download_urls"] = {k: v for k, v in {
+            "log_file": _safe_download_url(sim_log_path),
+            "docking_file": _safe_download_url(sim_pdb_path),
+            "grid_file": _safe_download_url(sim_grid_path),
+            "receptor_file": _safe_download_url(receptor_pdbqt),
+            "ligand_file": _safe_download_url(ligand_pdbqt),
+        }.items() if v}
         return pipeline
 
     logger.info("[SmartDock] STEP 3: Running Vina docking...")
@@ -1638,8 +1649,16 @@ def smart_dock(
             else:
                 continue
 
+        # Guard: never use ligand file as receptor when receptor is unavailable
+        effective_receptor = conf_pdbqt or receptor_pdbqt
+        if not effective_receptor:
+            logger.warning(
+                "[SmartDock] No receptor PDBQT available for this conformation, skipping"
+            )
+            continue
+
         vina_result = run_vina_docking(
-            conf_pdbqt or receptor_pdbqt or ligand_pdbqt,
+            effective_receptor,
             ligand_pdbqt,
             center_x,
             center_y,
@@ -1702,19 +1721,23 @@ def smart_dock(
             )
             pipeline["engine_used"] = "vina_then_gnina"
 
-            gnina_result = run_gnina_docking(
-                receptor_pdbqt or ligand_pdbqt,
-                ligand_pdbqt,
-                center_x,
-                center_y,
-                center_z,
-                size_x,
-                size_y,
-                size_z,
-                exhaustiveness,
-                min(num_modes, len(selected_for_gnina)),
-                output_dir,
-            )
+            if not receptor_pdbqt:
+                logger.warning("[SmartDock] No receptor for GNINA refinement, skipping")
+                gnina_result = {"success": False, "results": [], "files": {}}
+            else:
+                gnina_result = run_gnina_docking(
+                    receptor_pdbqt,
+                    ligand_pdbqt,
+                    center_x,
+                    center_y,
+                    center_z,
+                    size_x,
+                    size_y,
+                    size_z,
+                    exhaustiveness,
+                    min(num_modes, len(selected_for_gnina)),
+                    output_dir,
+                )
 
             if gnina_result["success"]:
                 # Merge Vina scores into GNINA results (GNINA log may not have all Vina poses)
@@ -1759,23 +1782,17 @@ def smart_dock(
                 }
             )
 
-            pipeline["download_urls"] = {
-                "log_file": f"/download/{os.path.basename(pipeline['files'].get('log', ''))}",
-                "docking_file": f"/download/{os.path.basename(pipeline['files'].get('docking', ''))}",
-                "grid_file": f"/download/{os.path.basename(pipeline['files'].get('grid', ''))}",
-                "vina_log": f"/download/{os.path.basename(pipeline['files'].get('vina_log', pipeline['files'].get('log', '')))}",
-                "vina_docking": f"/download/{os.path.basename(pipeline['files'].get('vina_docking', pipeline['files'].get('docking', '')))}",
-                "gnina_log": f"/download/{os.path.basename(pipeline['files'].get('log', ''))}",
-                "gnina_docking": f"/download/{os.path.basename(pipeline['files'].get('docking', ''))}",
-            }
-            if receptor_pdbqt:
-                pipeline["download_urls"]["receptor_file"] = (
-                    f"/download/{os.path.basename(receptor_pdbqt)}"
-                )
-            if ligand_pdbqt:
-                pipeline["download_urls"]["ligand_file"] = (
-                    f"/download/{os.path.basename(ligand_pdbqt)}"
-                )
+            pipeline["download_urls"] = {k: v for k, v in {
+                "log_file": _safe_download_url(pipeline['files'].get('log', '')),
+                "docking_file": _safe_download_url(pipeline['files'].get('docking', '')),
+                "grid_file": _safe_download_url(pipeline['files'].get('grid', '')),
+                "vina_log": _safe_download_url(pipeline['files'].get('vina_log', pipeline['files'].get('log', ''))),
+                "vina_docking": _safe_download_url(pipeline['files'].get('vina_docking', pipeline['files'].get('docking', ''))),
+                "gnina_log": _safe_download_url(pipeline['files'].get('log', '')),
+                "gnina_docking": _safe_download_url(pipeline['files'].get('docking', '')),
+                "receptor_file": _safe_download_url(receptor_pdbqt),
+                "ligand_file": _safe_download_url(ligand_pdbqt),
+            }.items() if v}
         else:
             logger.warning("[SmartDock] No poses selected for GNINA")
             pipeline["routing_decision"] = (
@@ -1789,18 +1806,12 @@ def smart_dock(
                     "details": f"Vina only, {len(all_results)} poses",
                 }
             )
-            pipeline["download_urls"] = {
-                "log_file": f"/download/{os.path.basename(vina_result.get('files', {}).get('log', ''))}",
-                "docking_file": f"/download/{os.path.basename(vina_result.get('files', {}).get('docking', ''))}",
-            }
-            if receptor_pdbqt:
-                pipeline["download_urls"]["receptor_file"] = (
-                    f"/download/{os.path.basename(receptor_pdbqt)}"
-                )
-            if ligand_pdbqt:
-                pipeline["download_urls"]["ligand_file"] = (
-                    f"/download/{os.path.basename(ligand_pdbqt)}"
-                )
+            pipeline["download_urls"] = {k: v for k, v in {
+                "log_file": _safe_download_url(vina_result.get('files', {}).get('log', '')),
+                "docking_file": _safe_download_url(vina_result.get('files', {}).get('docking', '')),
+                "receptor_file": _safe_download_url(receptor_pdbqt),
+                "ligand_file": _safe_download_url(ligand_pdbqt),
+            }.items() if v}
 
     else:
         # GNINA unavailable — Vina results only
@@ -1820,19 +1831,13 @@ def smart_dock(
             }
         )
 
-        pipeline["download_urls"] = {
-            "log_file": f"/download/{os.path.basename(pipeline['files'].get('log', ''))}",
-            "docking_file": f"/download/{os.path.basename(pipeline['files'].get('docking', ''))}",
-            "grid_file": f"/download/{os.path.basename(pipeline['files'].get('grid', ''))}",
-        }
-        if receptor_pdbqt:
-            pipeline["download_urls"]["receptor_file"] = (
-                f"/download/{os.path.basename(receptor_pdbqt)}"
-            )
-        if ligand_pdbqt:
-            pipeline["download_urls"]["ligand_file"] = (
-                f"/download/{os.path.basename(ligand_pdbqt)}"
-            )
+        pipeline["download_urls"] = {k: v for k, v in {
+            "log_file": _safe_download_url(pipeline['files'].get('log', '')),
+            "docking_file": _safe_download_url(pipeline['files'].get('docking', '')),
+            "grid_file": _safe_download_url(pipeline['files'].get('grid', '')),
+            "receptor_file": _safe_download_url(receptor_pdbqt),
+            "ligand_file": _safe_download_url(ligand_pdbqt),
+        }.items() if v}
 
     # Apply composite scoring (always-on)
     if pipeline["results"]:

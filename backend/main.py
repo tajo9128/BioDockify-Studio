@@ -1100,9 +1100,19 @@ def api_docking_run(req: DockingRunRequest):
 
             DockingProgress.update_progress(job_id, 85, "Saving results...")
             results = docking_result.get("results", [])
-            best_score = docking_result.get("best_score") or (
-                results[0]["vina_score"] if results else 0
-            )
+
+            # Handle pipeline failure with no results
+            if not results and not docking_result.get("success", True):
+                error_msg = docking_result.get("error", "Docking pipeline failed")
+                DockingProgress.set_status(job_id, "failed", error_msg)
+                update_job_status(job_id, "failed")
+                return
+
+            # Safely compute best_score (avoid falsy 0.0 trap with plain `or`)
+            best_score = docking_result.get("best_score")
+            if best_score is None:
+                best_score = results[0].get("vina_score", 0.0) if results else 0.0
+            best_score = float(best_score) if best_score is not None else 0.0
 
             docking_file = docking_result.get("files", {}).get("docking", "")
             pdb_data = ""
