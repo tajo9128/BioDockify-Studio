@@ -106,9 +106,9 @@ def _run_pipeline(req: LigandModifierRequest, job: LigandModifierJob):
             job.results = []
             return
 
-        # 4. Calculate properties for results (docking is optional)
-        job.status = "docking"
-        job.progress = 0.8
+        # 4. Build final results (docking skipped when no receptor provided)
+        job.status = "completed"
+        job.progress = 1.0
 
         results = []
         parent = req.parent_smiles
@@ -132,8 +132,6 @@ def _run_pipeline(req: LigandModifierRequest, job: LigandModifierJob):
         results.sort(key=lambda x: x["properties"].get("mw", 999))
 
         job.results = results
-        job.status = "completed"
-        job.progress = 1.0
 
     except Exception as e:
         job.status = "failed"

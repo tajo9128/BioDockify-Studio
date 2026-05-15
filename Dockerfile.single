@@ -1,4 +1,4 @@
-# BioDockify Studio AI - Single Container v4.3.7
+# BioDockify Studio AI - Single Container v4.4.4
 # All-in-one: React frontend + FastAPI backend + RDKit + CrewAI + GPU support
 
 # Stage 1: Build React frontend
@@ -13,8 +13,8 @@ RUN NODE_OPTIONS="--max-old-space-size=4096" npm run build
 FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
 
 LABEL maintainer="BioDockify"
-LABEL description="BioDockify Studio AI v4.3.7 - Single container with RDKit + CrewAI + GPU"
-LABEL version="4.3.7"
+LABEL description="BioDockify Studio AI v4.4.4 - Single container with RDKit + CrewAI + GPU"
+LABEL version="4.4.4"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1

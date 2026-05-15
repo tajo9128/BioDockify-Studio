@@ -3,7 +3,7 @@ import { useTheme } from '@/contexts/ThemeContext'
 import { useAccessibility } from '@/contexts/AccessibilityContext'
 import { locales, getLocale, setLocale, Locale } from '@/i18n'
 
-const APP_VERSION = '2.4.0'
+const APP_VERSION = '4.4.4'
 
 // BioDockify AI Plugins (channels/providers)
 const PLUGIN_CHANNELS = [

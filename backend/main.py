@@ -61,7 +61,7 @@ logger.info("Docking Studio backend initialized")
 app = FastAPI(
     title="BioDockify Studio AI API",
     description="Backend API for BioDockify Studio AI - Autonomous Drug Discovery Platform",
-    version="2.3.4",
+    version="4.4.4",
 )
 
 app.add_middleware(

@@ -88,8 +88,6 @@ export function LigandModifier() {
       }
     } finally {
       setIsRunning(false)
-      setJobStatus(null)
-      setProgress(0)
       abortCtrlRef.current = null
       currentJobIdRef.current = null
     }
@@ -302,6 +300,7 @@ export function LigandModifier() {
                   <th className="px-4 py-2">LogP</th>
                   <th className="px-4 py-2">HBD</th>
                   <th className="px-4 py-2">HBA</th>
+                  <th className="px-4 py-2">TPSA</th>
                   <th className="px-4 py-2">Source</th>
                   <th className="px-4 py-2">Actions</th>
                 </tr>
@@ -324,6 +323,7 @@ export function LigandModifier() {
                     <td className="px-4 py-2">{r.properties?.logp?.toFixed(2) ?? '-'}</td>
                     <td className="px-4 py-2">{r.properties?.hbd ?? '-'}</td>
                     <td className="px-4 py-2">{r.properties?.hba ?? '-'}</td>
+                    <td className="px-4 py-2">{r.properties?.tpsa?.toFixed(1) ?? '-'}</td>
                     <td className="px-4 py-2">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${sourceColors[r.source] || 'bg-gray-100 text-gray-700'}`}>
                         {r.source}

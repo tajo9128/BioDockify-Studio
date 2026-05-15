@@ -91,7 +91,6 @@ def _fetch_pubchem_similar(query_smiles: str, threshold: float, max_results: int
     from urllib.parse import quote
 
     try:
-        # URL-encode SMILES so special chars like ()=#[] don't break the path
         encoded_smiles = quote(query_smiles, safe="")
         cid_resp = requests.get(
             f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/{encoded_smiles}/cids/JSON",
@@ -99,9 +98,13 @@ def _fetch_pubchem_similar(query_smiles: str, threshold: float, max_results: int
         )
         if cid_resp.status_code != 200:
             return []
-        cid = cid_resp.json()["IdentifierList"]["CID"][0]
+        cid_data = cid_resp.json()
+        identifier_list = cid_data.get("IdentifierList", {})
+        cids = identifier_list.get("CID", [])
+        if not cids:
+            return []
+        cid = cids[0]
 
-        # fastsimilarity_2d is the synchronous 2D-Tanimoto endpoint (not async)
         similar_resp = requests.get(
             f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/fastsimilarity_2d/cid/{cid}/cids/JSON",
             params={"Threshold": int(threshold * 100), "MaxRecords": max_results},
@@ -110,7 +113,10 @@ def _fetch_pubchem_similar(query_smiles: str, threshold: float, max_results: int
         if similar_resp.status_code != 200:
             return []
 
-        similar_cids = similar_resp.json()["IdentifierList"]["CID"]
+        similar_data = similar_resp.json()
+        similar_cids = similar_data.get("IdentifierList", {}).get("CID", [])
+        if not similar_cids:
+            return []
 
         results = []
         for cid in similar_cids[:max_results]:
@@ -119,8 +125,7 @@ def _fetch_pubchem_similar(query_smiles: str, threshold: float, max_results: int
                 timeout=10,
             )
             if smiles_resp.status_code == 200:
-                props = smiles_resp.json()["PropertyTable"]["Properties"][0]
-                # PubChem returns SMILES when no stereochemistry is present
+                props = smiles_resp.json().get("PropertyTable", {}).get("Properties", [{}])[0]
                 smiles = props.get("IsomericSMILES") or props.get("SMILES")
                 if smiles:
                     results.append({"smiles": smiles, "cid": cid, "source": "pubchem"})

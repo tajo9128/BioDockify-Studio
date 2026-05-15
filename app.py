@@ -8,7 +8,7 @@ import uuid
 import json
 from datetime import datetime
 
-app = FastAPI(title='Biodockify Studio AI', version='4.4.2')
+app = FastAPI(title='Biodockify Studio AI', version='4.4.4')
 
 app.add_middleware(
     CORSMiddleware,
@@ -760,7 +760,7 @@ async def root():
 
 @app.get('/health')
 async def health():
-    return {'status': 'healthy', 'timestamp': datetime.utcnow().isoformat(), 'version': '4.4.2'}
+    return {'status': 'healthy', 'timestamp': datetime.utcnow().isoformat(), 'version': '4.4.4'}
 
 @app.get('/api/stats')
 async def get_stats():
