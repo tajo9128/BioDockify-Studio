@@ -37,6 +37,7 @@ STRATEGY_TRANSFORMS = {
     "increase_lipophilicity": ["add_CH3", "add_F", "add_Cl"],
     "reduce_molecular_weight": ["demethylate"],
     "improve_druglikeness": ["add_OH", "add_F", "demethylate"],
+    "optimize_binding": ["add_OH", "add_F", "demethylate", "add_NH2"],
 }
 
 

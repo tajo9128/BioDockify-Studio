@@ -8,7 +8,7 @@ from typing import List, Optional, Literal
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ class LigandModifierRequest(BaseModel):
     prompt: Optional[str] = None
     database: Literal["pubchem", "chembl"] = "pubchem"
     similarity_threshold: float = 0.85
-    max_variants: int = 50
+    max_variants: int = Field(ge=10, le=100, default=50)
     docking_exhaustiveness: int = 8
 
 
@@ -111,11 +111,15 @@ def _run_pipeline(req: LigandModifierRequest, job: LigandModifierJob):
         job.progress = 0.8
 
         results = []
+        parent = req.parent_smiles
         for v in filtered[: req.max_variants]:
+            mod_smi = v["modified_smiles"]
+            if mod_smi == parent:
+                continue
             results.append(
                 {
-                    "parent_smiles": v.get("parent_smiles", req.parent_smiles),
-                    "modified_smiles": v["modified_smiles"],
+                    "parent_smiles": v.get("parent_smiles", parent),
+                    "modified_smiles": mod_smi,
                     "applied_transform": v.get("applied_transform", "unknown"),
                     "properties": v.get("properties", {}),
                     "docking_score": None,

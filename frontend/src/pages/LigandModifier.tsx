@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { ligandModifierAPI, type LigandModifierRequest, type ModificationResult } from '@/api/ligandModifier'
 
 const MODES = [
@@ -29,12 +29,19 @@ export function LigandModifier() {
   const [error, setError] = useState<string | null>(null)
   const [isRunning, setIsRunning] = useState(false)
   const [selectedSmiles, setSelectedSmiles] = useState<string | null>(null)
+  const abortCtrlRef = useRef<AbortController | null>(null)
+  const currentJobIdRef = useRef<string | null>(null)
 
   async function handleStart() {
     if (!parentSmiles.trim()) {
       setError('Please enter a parent ligand SMILES')
       return
     }
+
+    // Clean up any previous abort controller
+    abortCtrlRef.current?.abort()
+    abortCtrlRef.current = new AbortController()
+    const signal = abortCtrlRef.current.signal
 
     try {
       setIsRunning(true)
@@ -54,14 +61,18 @@ export function LigandModifier() {
         docking_exhaustiveness: 8,
       }
 
-      const { job_id } = await ligandModifierAPI.optimize(req)
+      const { job_id } = await ligandModifierAPI.optimize(req, signal)
+      currentJobIdRef.current = job_id
 
       const finalStatus = await ligandModifierAPI.pollUntilComplete(
         job_id,
         (status) => {
           setJobStatus(status.status)
           setProgress(status.progress)
-        }
+        },
+        2000,
+        300000,
+        signal
       )
 
       if (finalStatus.status === 'completed') {
@@ -70,15 +81,30 @@ export function LigandModifier() {
         setError(finalStatus.error || 'Optimization failed')
       }
     } catch (e: any) {
-      setError(e.message || 'Failed to start optimization')
+      if (e.name === 'CanceledError' || e.message === 'Cancelled' || signal.aborted) {
+        setError('Optimization cancelled')
+      } else {
+        setError(e.message || 'Failed to start optimization')
+      }
     } finally {
       setIsRunning(false)
       setJobStatus(null)
       setProgress(0)
+      abortCtrlRef.current = null
+      currentJobIdRef.current = null
     }
   }
 
-  function handleCancel() {
+  async function handleCancel() {
+    const jobId = currentJobIdRef.current
+    if (jobId) {
+      try {
+        await ligandModifierAPI.cancel(jobId)
+      } catch {
+        // Ignore cancel errors
+      }
+    }
+    abortCtrlRef.current?.abort()
     setIsRunning(false)
     setJobStatus('cancelled')
   }

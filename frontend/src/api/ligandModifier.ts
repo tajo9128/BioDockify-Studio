@@ -37,13 +37,13 @@ export interface LigandModifierRequest {
 }
 
 export const ligandModifierAPI = {
-  optimize: async (req: LigandModifierRequest): Promise<{ job_id: string; status: string; message: string }> => {
-    const { data } = await apiClient.post('/api/ligand-modifier/optimize', req)
+  optimize: async (req: LigandModifierRequest, signal?: AbortSignal): Promise<{ job_id: string; status: string; message: string }> => {
+    const { data } = await apiClient.post('/api/ligand-modifier/optimize', req, { signal })
     return data
   },
 
-  getStatus: async (jobId: string): Promise<LigandModifierJob> => {
-    const { data } = await apiClient.get(`/api/ligand-modifier/status/${jobId}`)
+  getStatus: async (jobId: string, signal?: AbortSignal): Promise<LigandModifierJob> => {
+    const { data } = await apiClient.get(`/api/ligand-modifier/status/${jobId}`, { signal })
     return data
   },
 
@@ -56,12 +56,16 @@ export const ligandModifierAPI = {
     jobId: string,
     onProgress?: (status: LigandModifierJob) => void,
     intervalMs: number = 2000,
-    timeoutMs: number = 300000
+    timeoutMs: number = 300000,
+    signal?: AbortSignal
   ): Promise<LigandModifierJob> => {
     const startTime = Date.now()
 
     while (Date.now() - startTime < timeoutMs) {
-      const status = await ligandModifierAPI.getStatus(jobId)
+      if (signal?.aborted) {
+        throw new Error('Cancelled')
+      }
+      const status = await ligandModifierAPI.getStatus(jobId, signal)
       onProgress?.(status)
 
       if (['completed', 'failed', 'cancelled'].includes(status.status)) {

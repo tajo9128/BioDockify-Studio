@@ -17,7 +17,7 @@ class SimilaritySearchRequest(BaseModel):
     query_smiles: str
     database: Literal["pubchem", "chembl"] = "pubchem"
     similarity_threshold: float = Field(ge=0.8, le=0.95, default=0.85)
-    max_results: int = Field(ge=5, le=50, default=20)
+    max_results: int = Field(ge=5, le=100, default=20)
 
 
 class ModificationPlan(BaseModel):
@@ -52,7 +52,37 @@ def fetch_similar_ligands(req: SimilaritySearchRequest) -> List[Dict]:
     """Fetch similar ligands from PubChem/ChEMBL using fingerprint similarity."""
     if req.database == "pubchem":
         return _fetch_pubchem_similar(req.query_smiles, req.similarity_threshold, req.max_results)
+    elif req.database == "chembl":
+        return _fetch_chembl_similar(req.query_smiles, req.similarity_threshold, req.max_results)
     return []
+
+
+def _fetch_chembl_similar(query_smiles: str, threshold: float, max_results: int) -> List[Dict]:
+    """ChEMBL similarity search via their REST API."""
+    import requests
+    from urllib.parse import quote
+
+    try:
+        encoded = quote(query_smiles, safe="")
+        resp = requests.get(
+            f"https://www.ebi.ac.uk/chembl/api/data/similarity/{encoded}/{int(threshold * 100)}.json",
+            params={"limit": max_results},
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        molecules = data.get("molecules", [])
+        results = []
+        for mol in molecules[:max_results]:
+            smiles = mol.get("molecule_structures", {}).get("canonical_smiles")
+            chembl_id = mol.get("molecule_chembl_id")
+            if smiles:
+                results.append({"smiles": smiles, "chembl_id": chembl_id, "source": "chembl"})
+        return results
+    except Exception as e:
+        logger.error(f"ChEMBL fetch failed: {e}")
+        return []
 
 
 def _fetch_pubchem_similar(query_smiles: str, threshold: float, max_results: int) -> List[Dict]:
@@ -89,8 +119,11 @@ def _fetch_pubchem_similar(query_smiles: str, threshold: float, max_results: int
                 timeout=10,
             )
             if smiles_resp.status_code == 200:
-                smiles = smiles_resp.json()["PropertyTable"]["Properties"][0]["IsomericSMILES"]
-                results.append({"smiles": smiles, "cid": cid, "source": "pubchem"})
+                props = smiles_resp.json()["PropertyTable"]["Properties"][0]
+                # PubChem returns SMILES when no stereochemistry is present
+                smiles = props.get("IsomericSMILES") or props.get("SMILES")
+                if smiles:
+                    results.append({"smiles": smiles, "cid": cid, "source": "pubchem"})
 
         return results
     except Exception as e:
@@ -125,7 +158,7 @@ def parse_modification_prompt(prompt: str, parent_smiles: str) -> ModificationPl
     if mw_match:
         constraints["mw_max"] = float(mw_match.group(1))
 
-    logp_match = re.search(r'logp?\s*(?:<|less than|max|maximum)?\s*([\d.]+)', prompt_lower)
+    logp_match = re.search(r'logp\b\s*(?:<|less than|max|maximum)?\s*([\d.]+)', prompt_lower)
     if logp_match:
         constraints["logp_max"] = float(logp_match.group(1))
 
@@ -147,9 +180,15 @@ def parse_modification_prompt(prompt: str, parent_smiles: str) -> ModificationPl
 
 def apply_rdkit_transformations(parent_smiles_list: List[str], plan: ModificationPlan) -> List[Dict]:
     """Apply RDKit reaction SMARTS to generate variants."""
-    from chemistry.transformation_engine import apply_transformations_safe
+    from chemistry.transformation_engine import apply_transformations_safe, STRATEGY_TRANSFORMS, REACTION_LIBRARY
 
-    return apply_transformations_safe(parent_smiles_list, plan.transformations, plan.max_variants)
+    transforms = plan.transformations[:]
+    if not transforms and plan.strategy:
+        transforms = STRATEGY_TRANSFORMS.get(plan.strategy, [])
+    if not transforms:
+        # Fallback: apply a curated set of safe transforms for general optimization
+        transforms = ["add_OH", "add_F", "demethylate", "add_NH2"]
+    return apply_transformations_safe(parent_smiles_list, transforms, plan.max_variants)
 
 
 def validate_and_filter(variants: List[Dict], constraints: Dict[str, float]) -> List[Dict]:
