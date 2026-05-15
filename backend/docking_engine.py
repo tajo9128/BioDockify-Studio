@@ -1126,8 +1126,11 @@ DIMENSIONS = {int(size_x / 0.375)} x {int(size_y / 0.375)} x {int(size_z / 0.375
 
             try:
                 v.write_pose(docking_file, overwrite=True)
-            except:
-                pass
+            except Exception:
+                try:
+                    v.write_poses(docking_file, n_poses=num_modes, overwrite=True)
+                except Exception as e2:
+                    logger.warning(f"[Vina Python] write_pose/write_poses failed: {e2}")
 
             with open(log_file, "w") as f:
                 f.write(f"""# Vina Log - BioDockify Studio AI
@@ -1809,6 +1812,7 @@ def smart_dock(
             pipeline["download_urls"] = {k: v for k, v in {
                 "log_file": _safe_download_url(vina_result.get('files', {}).get('log', '')),
                 "docking_file": _safe_download_url(vina_result.get('files', {}).get('docking', '')),
+                "grid_file": _safe_download_url(vina_result.get('files', {}).get('grid', '')),
                 "receptor_file": _safe_download_url(receptor_pdbqt),
                 "ligand_file": _safe_download_url(ligand_pdbqt),
             }.items() if v}
@@ -1882,6 +1886,12 @@ def smart_dock(
             logger.info(
                 f"[SmartDock] Composite scoring applied: best={pipeline['best_score']:.4f}"
             )
+
+    # Persist receptor/ligand paths so history jobs can offer them for download
+    if receptor_pdbqt:
+        pipeline["files"]["receptor"] = receptor_pdbqt
+    if ligand_pdbqt:
+        pipeline["files"]["ligand"] = ligand_pdbqt
 
     return pipeline
 

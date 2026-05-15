@@ -32,7 +32,7 @@ from analysis import (
     calculate_advanced_interactions,
     get_binding_site_residues,
 )
-from docking_engine import check_gnina, check_vina
+from docking_engine import check_gnina, check_vina, _safe_download_url
 from db import (
     init_db,
     create_job,
@@ -1259,12 +1259,29 @@ def api_docking_result(job_id: str):
 
 
 def _files_to_download_urls(files: dict) -> dict:
-    """Convert absolute file paths to /storage/... download URLs."""
+    """Convert file paths to /download/... URLs with frontend-compatible keys.
+    Validates existence by basename in STORAGE_DIR so history survives server
+    restarts and path changes (e.g. Docker -> local, Windows drive letters)."""
+    key_map = {
+        "log": "log_file",
+        "docking": "docking_file",
+        "grid": "grid_file",
+        "vina_log": "vina_log",
+        "vina_docking": "vina_docking",
+        "gnina_output": "gnina_docking",
+        "receptor": "receptor_file",
+        "ligand": "ligand_file",
+    }
     urls = {}
-    for key, path in (files or {}).items():
-        if path and os.path.exists(path):
-            fname = os.path.basename(path)
-            urls[key] = f"/storage/{fname}"
+    for raw_key, path in (files or {}).items():
+        url = _safe_download_url(path)
+        if not url:
+            continue
+        fname = os.path.basename(path)
+        # Validate against current STORAGE_DIR, not stale absolute path
+        if os.path.exists(os.path.join(STORAGE_DIR, fname)):
+            mapped_key = key_map.get(raw_key, raw_key)
+            urls[mapped_key] = url
     return urls
 
 
@@ -2394,7 +2411,7 @@ def get_benchmark_results(job_id: str):
         raise HTTPException(404, "Job not found")
 
     report_path = f"{STORAGE_DIR}/benchmarks/{job_id}/report.json"
-    if Path(report_path).exists():
+    if os.path.exists(report_path):
         with open(report_path) as f:
             results = json.load(f)
         return {"job_id": job_id, "status": job.status, "results": results}
