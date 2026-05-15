@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+﻿import { Link, useLocation } from 'react-router-dom'
 import { useTheme } from '@/contexts/ThemeContext'
 
 const navItems = [
@@ -27,54 +26,19 @@ export function Sidebar() {
   const location = useLocation()
   const { theme } = useTheme()
   const isDark = theme === 'dark'
-  const [collapsed, setCollapsed] = useState(false)
 
   return (
-    <aside className={`flex flex-col shadow-sm transition-all duration-300 flex-shrink-0 ${
-      collapsed ? 'w-14' : 'w-56'
-    } ${
+    <aside className={`w-56 flex flex-col shadow-sm transition-colors ${
       isDark
         ? 'bg-gray-900 text-white border-r border-gray-700'
         : 'bg-white text-gray-800 border-r border-gray-200'
     }`}>
-      {/* Logo / collapse toggle header */}
-      <div className={`flex items-center h-10 flex-shrink-0 border-b ${
-        collapsed ? 'justify-center px-2' : 'justify-between px-3'
-      } ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-        {!collapsed && (
-          <a href="/" className="flex items-center gap-1 overflow-hidden min-w-0">
-            <span className="text-sm font-bold text-blue-500 whitespace-nowrap">BioDockify</span>
-            <span className={`text-sm font-bold whitespace-nowrap ${isDark ? 'text-white' : 'text-gray-900'}`}>Studio</span>
-          </a>
-        )}
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className={`p-1 rounded transition-colors flex-shrink-0 ${
-            isDark ? 'hover:bg-gray-700 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500 hover:text-gray-800'
-          }`}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          <svg
-            className={`w-4 h-4 transition-transform duration-300 ${collapsed ? 'rotate-180' : ''}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-          </svg>
-        </button>
-      </div>
-
-      {/* Navigation */}
-      <nav className="flex-1 py-2 overflow-y-auto overflow-x-hidden">
+      <nav className="flex-1 py-2">
         {navItems.map(item => (
           <Link
             key={item.path}
             to={item.path}
-            title={collapsed ? item.label : undefined}
-            className={`flex items-center gap-3 py-2.5 mx-2 rounded-lg transition-colors ${
-              collapsed ? 'justify-center px-2' : 'px-4'
-            } ${
+            className={`flex items-center gap-3 px-4 py-2.5 mx-2 rounded-lg transition-colors ${
               location.pathname === item.path
                 ? isDark
                   ? 'bg-blue-600 text-white font-medium'
@@ -84,12 +48,10 @@ export function Sidebar() {
                   : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
             }`}
           >
-            <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={item.icon} />
             </svg>
-            {!collapsed && (
-              <span className="text-sm font-medium whitespace-nowrap overflow-hidden">{item.label}</span>
-            )}
+            <span className="text-sm font-medium">{item.label}</span>
           </Link>
         ))}
       </nav>
