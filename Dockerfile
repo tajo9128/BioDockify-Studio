@@ -7,13 +7,13 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ ./
-RUN npm run build
+RUN NODE_OPTIONS="--max-old-space-size=4096" npm run build
 
 # Stage 2: Final Image (CPU only - Vina)
 FROM python:3.11-slim
 
 LABEL maintainer="BioDockify"
-LABEL description="Docking Studio - Vina molecular docking with RDKit analysis"
+LABEL description="BioDockify Studio AI - All-in-one molecular docking and drug discovery platform"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1 \
@@ -23,12 +23,11 @@ ENV PYTHONUNBUFFERED=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
+    bzip2 \
+    ca-certificates \
+    tzdata \
     supervisor \
-    libopenbabel7 \
-    libhdf5-dev \
-    libopenblas-dev \
     libglib2.0-0 \
-    libgfortran5 \
     libsm6 \
     libxml2 \
     libxslt1.1 \
@@ -36,25 +35,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-RUN pip install --no-cache-dir \
-    six && \
-    pip install --no-cache-dir \
-    vina \
-    rdkit \
-    meeko
-
 # Set working directory
 WORKDIR /app
 
-# Copy backend files
-COPY backend/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+# Install scientific packages from pip
+RUN pip install --no-cache-dir \
+    rdkit-pypi==2022.9.5
 
-COPY backend/ /app/
+# Copy backend files (preserve directory structure)
+COPY backend/requirements.txt /app/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 
-# Copy React built frontend into static directory
-COPY --from=frontend-builder /app/frontend/dist /app/backend/static/
+COPY backend/ /app/backend/
+
+# Copy React built frontend into backend static directory
+COPY --from=frontend-builder /app/backend/static /app/backend/static/
 
 # Create supervisor configuration
 RUN mkdir -p /var/log/supervisor
@@ -63,14 +58,15 @@ RUN mkdir -p /var/log/supervisor
 RUN echo '#!/bin/bash' > /startup.sh && \
     echo 'echo ""' >> /startup.sh && \
     echo 'echo "============================================================"' >> /startup.sh && \
-    echo 'echo "  🧬 Docking Studio - Backend Starting..."' >> /startup.sh && \
-    echo 'echo "============================================================"' >> /startup.sh && \
+    echo 'echo "  🧬 BioDockify Studio AI - Backend Starting..."' >> /startup.sh && \
+    echo 'echo "============================================================="' >> /startup.sh && \
     echo 'echo ""' >> /startup.sh && \
     echo 'echo "  🌐 Web UI:           http://localhost:8000"' >> /startup.sh && \
+    echo 'echo "  🧪 ChemDraw:         http://localhost:8000/chemdraw"' >> /startup.sh && \
     echo 'echo "  📚 API Documentation: http://localhost:8000/docs"' >> /startup.sh && \
     echo 'echo "  📖 ReDoc:            http://localhost:8000/redoc"' >> /startup.sh && \
     echo 'echo "  ✅ Health:           http://localhost:8000/health"' >> /startup.sh && \
-    echo 'echo "============================================================"' >> /startup.sh && \
+    echo 'echo "============================================================="' >> /startup.sh && \
     echo 'echo ""' >> /startup.sh && \
     chmod +x /startup.sh
 
@@ -84,7 +80,7 @@ RUN echo '[supervisord]' >> /etc/supervisor/conf.d/docking-studio.conf && \
     echo '' >> /etc/supervisor/conf.d/docking-studio.conf && \
     echo '[program:uvicorn]' >> /etc/supervisor/conf.d/docking-studio.conf && \
     echo 'command=uvicorn main:app --host 0.0.0.0 --port 8000 --reload' >> /etc/supervisor/conf.d/docking-studio.conf && \
-    echo 'directory=/app' >> /etc/supervisor/conf.d/docking-studio.conf && \
+    echo 'directory=/app/backend' >> /etc/supervisor/conf.d/docking-studio.conf && \
     echo 'user=root' >> /etc/supervisor/conf.d/docking-studio.conf && \
     echo 'stdout_logfile=/dev/stdout' >> /etc/supervisor/conf.d/docking-studio.conf && \
     echo 'stdout_logfile_maxbytes=0' >> /etc/supervisor/conf.d/docking-studio.conf && \

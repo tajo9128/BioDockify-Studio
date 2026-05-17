@@ -1,8 +1,8 @@
 """
 Docking Studio v2.0 - Enhanced Brain Service
-Simplified nanobot-inspired architecture for drug discovery
+Simplified bioDockify AI-inspired architecture for drug discovery
 
-Key features from nanobot:
+Key features from bioDockify AI:
 - Tool registry with JSON schema validation
 - Streaming support
 - Conversation memory
@@ -13,6 +13,7 @@ import os
 import json
 import logging
 import uuid
+from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
@@ -36,14 +37,14 @@ STORAGE_DIR.mkdir(exist_ok=True)
 UPLOADS_DIR.mkdir(exist_ok=True)
 
 app = FastAPI(
-    title="Nanobot Brain Service",
+    title="BioDockify AI Brain Service",
     description="AI Agent for Docking Studio with drug discovery tools",
     version="2.0.0",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -200,41 +201,96 @@ registry = ToolRegistry()
 memory = ConversationMemory()
 
 
+_OLLAMA_DEFAULT_URL = f"http://{os.getenv('OLLAMA_HOST', 'host.docker.internal:11434')}/v1"
+_OLLAMA_DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
+
+
 async def get_llm_settings() -> dict:
-    """Fetch LLM settings from api-backend"""
+    """Fetch LLM settings from api-backend (using raw endpoint to get actual API key)."""
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(f"{API_BACKEND_URL}/llm/settings")
+            response = await client.get(f"{API_BACKEND_URL}/llm/settings/raw")
             response.raise_for_status()
             return response.json()
     except Exception as e:
         logger.error(f"Failed to fetch LLM settings: {e}")
+        # Default to Ollama when api-backend is unreachable
         return {
-            "provider": "openai",
-            "model": "gpt-4o-mini",
+            "provider": "ollama",
+            "model": _OLLAMA_DEFAULT_MODEL,
             "api_key": "",
-            "base_url": "https://api.openai.com/v1",
+            "base_url": _OLLAMA_DEFAULT_URL,
             "temperature": 0.0,
             "max_tokens": 4096,
         }
 
 
-async def get_provider() -> LLMProvider:
+async def _check_ollama(base_url: str) -> bool:
+    """Return True if Ollama is reachable (3s timeout)."""
+    try:
+        api_root = base_url.rstrip("/")
+        if api_root.endswith("/v1"):
+            api_root = api_root[:-3]
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get(f"{api_root}/api/tags")
+            return r.status_code == 200
+    except Exception:
+        return False
+
+
+async def get_provider(provider_override: Optional[str] = None):
+    """
+    Resolve the LLM provider to use.
+    provider_override: 'ollama' | 'paid' | None (use settings default)
+    Returns (provider_instance, provider_name, model_name).
+    Falls back to paid provider when Ollama is selected but unavailable.
+    """
     settings = await get_llm_settings()
     api_key = settings.get("api_key", "")
     base_url = settings.get("base_url", "https://api.openai.com/v1")
     model = settings.get("model", "gpt-4o-mini")
+    config_provider = settings.get("provider", "openai")
 
-    provider_type = settings.get("provider", "openai")
+    # Determine whether caller wants Ollama
+    want_ollama = provider_override == "ollama" or (
+        provider_override is None and config_provider == "ollama"
+    )
 
-    if provider_type == "anthropic":
-        return AnthropicProvider(api_key, model)
-    else:
-        return OpenAIProvider(api_key, base_url, model)
+    if want_ollama:
+        # Resolve Ollama URL/model from settings or defaults
+        if config_provider == "ollama":
+            o_url = base_url.rstrip("/")
+            o_model = model
+        else:
+            o_url = _OLLAMA_DEFAULT_URL.rstrip("/")
+            o_model = _OLLAMA_DEFAULT_MODEL
+        if not o_url.endswith("/v1"):
+            o_url += "/v1"
+
+        if await _check_ollama(o_url):
+            logger.info(f"Using Ollama at {o_url} model={o_model}")
+            return OpenAIProvider("ollama", o_url, o_model), "ollama", o_model
+
+        # Ollama is unreachable — attempt paid fallback
+        logger.warning(f"Ollama unavailable at {o_url}")
+        if config_provider != "ollama" and api_key:
+            logger.info(f"Ollama down, falling back to configured provider: {config_provider}")
+            want_ollama = False  # fall through to paid logic
+        else:
+            raise RuntimeError(
+                "Ollama is not reachable. Please start Ollama or switch to a Paid Model in Settings."
+            )
+
+    # Paid / API-based provider
+    if config_provider == "anthropic":
+        return AnthropicProvider(api_key, model), "anthropic", model
+
+    eff_url = base_url if base_url else "https://api.openai.com/v1"
+    return OpenAIProvider(api_key, eff_url, model), config_provider, model
 
 
 def create_system_prompt() -> str:
-    return """You are NanoBOT, an elite AI drug discovery scientist that surpasses BIOVIA Discovery Studio's AI capabilities.
+    return """You are BioDockify AI, an elite AI drug discovery scientist that surpasses BIOVIA Discovery Studio's AI capabilities.
 
 ## Your Core Strengths
 
@@ -330,6 +386,7 @@ class ChatRequest(BaseModel):
     message: str
     conversation_id: Optional[str] = None
     stream: bool = False
+    provider_override: Optional[str] = None  # 'ollama' | 'paid' | None
 
 
 class ChatResponse(BaseModel):
@@ -360,7 +417,7 @@ async def health_check():
 async def root():
     settings = await get_llm_settings()
     return {
-        "service": "Nanobot Brain Service",
+        "service": "BioDockify AI Brain Service",
         "version": "2.0.0",
         "model": settings.get("model", "unknown"),
         "provider": settings.get("provider", "unknown"),
@@ -385,7 +442,7 @@ async def chat(request: ChatRequest):
         messages.append({"role": h["role"], "content": h["content"]})
 
     tools = registry.list_tools()
-    p = await get_provider()
+    p, actual_provider, actual_model = await get_provider(request.provider_override)
 
     try:
         tools_used = []
@@ -456,13 +513,12 @@ async def chat(request: ChatRequest):
             tools_used,
         )
 
-        settings = await get_llm_settings()
         return ChatResponse(
             response=final_content or "Completed",
             conversation_id=conv_id,
             tools_used=tools_used,
-            model=settings.get("model", "unknown"),
-            provider=settings.get("provider", "openai"),
+            model=actual_model,
+            provider=actual_provider,
             available=True,
         )
 
@@ -490,7 +546,7 @@ async def chat_stream(request: ChatRequest):
     for h in history:
         messages.append({"role": h["role"], "content": h["content"]})
 
-    p = await get_provider()
+    p, actual_provider, actual_model = await get_provider(request.provider_override)
 
     async def generate():
         try:
@@ -513,23 +569,59 @@ async def chat_stream(request: ChatRequest):
 
 @app.get("/chat/status")
 async def chat_status():
-    """Get chat service status"""
+    """Get chat service status including per-provider availability."""
     settings = await get_llm_settings()
+    provider = settings.get("provider", "openai")
+    base_url = settings.get("base_url", "")
+    api_key = settings.get("api_key", "")
+    available = False
+    models = []
+
+    # Check configured provider availability
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(
-                f"{settings['base_url']}/models",
-                headers={"Authorization": f"Bearer {settings['api_key']}"},
-            )
-            models = [m.get("id") for m in response.json().get("data", [])[:10]]
-            available = True
-    except Exception:
-        models = []
+        if provider == "ollama":
+            # Strip /v1 suffix for native Ollama API endpoint
+            ollama_base = base_url.rstrip("/").removesuffix("/v1")
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(f"{ollama_base}/api/tags")
+                if response.status_code == 200:
+                    data = response.json()
+                    models = [m.get("name", "") for m in data.get("models", [])]
+                    available = True
+        elif provider == "anthropic":
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(
+                    "https://api.anthropic.com/v1/models",
+                    headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    models = [m.get("id", "") for m in data.get("data", [])]
+                    available = True
+        elif api_key:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(
+                    f"{base_url}/models",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    models = [m.get("id", "") for m in data.get("data", [])]
+                    available = True
+    except Exception as e:
+        logger.warning(f"Status check failed for {provider}: {e}")
         available = False
 
+    # Always check Ollama separately so the UI toggle knows its state
+    ollama_url = (
+        base_url if provider == "ollama" else _OLLAMA_DEFAULT_URL
+    )
+    ollama_available = await _check_ollama(ollama_url)
+
     return {
-        "provider": settings.get("provider", "openai"),
-        "ollama_available": available,
+        "provider": provider,
+        "provider_available": available,
+        "ollama_available": ollama_available,  # explicit Ollama status for UI toggle
         "models": [{"name": m} for m in models],
     }
 
@@ -543,6 +635,104 @@ async def get_memory(conversation_id: str):
 async def clear_memory(conversation_id: str):
     memory.clear(conversation_id)
     return {"status": "cleared"}
+
+
+@app.get("/ai/context")
+async def ai_context():
+    """Aggregate live platform context for Commander Brain UI — polls api-backend for jobs + service health."""
+    context: Dict[str, Any] = {
+        "stats": {},
+        "recent_jobs": [],
+        "services": {},
+        "tools_count": len(registry.list_tools()),
+        "tools": [t["name"] for t in registry.list_tools()],
+        "provider": "unknown",
+        "model": "unknown",
+    }
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        try:
+            r = await client.get(f"{API_BACKEND_URL}/stats")
+            if r.status_code == 200:
+                data = r.json()
+                context["stats"] = data
+                context["services"] = data.get("services", {})
+        except Exception:
+            pass
+        try:
+            r = await client.get(f"{API_BACKEND_URL}/jobs?limit=15")
+            if r.status_code == 200:
+                context["recent_jobs"] = r.json().get("jobs", [])[:15]
+        except Exception:
+            pass
+        try:
+            r = await client.get(f"{API_BACKEND_URL}/llm/settings")
+            if r.status_code == 200:
+                s = r.json()
+                context["provider"] = s.get("provider", "unknown")
+                context["model"] = s.get("model", "unknown")
+        except Exception:
+            pass
+    return context
+
+
+class ExecuteRequest(BaseModel):
+    action: str
+    params: Dict[str, Any] = {}
+
+
+@app.post("/ai/execute")
+async def ai_execute(req: ExecuteRequest):
+    """Commander AI executor — lets the UI trigger platform actions directly via the brain service."""
+    action = req.action.lower().strip()
+    params = req.params or {}
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            if action == "list_jobs":
+                limit = params.get("limit", 20)
+                r = await client.get(f"{API_BACKEND_URL}/jobs?limit={limit}")
+                r.raise_for_status()
+                return {"action": action, "result": r.json()}
+
+            elif action == "get_job":
+                job_id = params.get("job_id")
+                if not job_id:
+                    raise HTTPException(status_code=400, detail="job_id required")
+                r = await client.get(f"{API_BACKEND_URL}/jobs/{job_id}")
+                r.raise_for_status()
+                return {"action": action, "result": r.json()}
+
+            elif action == "get_stats":
+                r = await client.get(f"{API_BACKEND_URL}/stats")
+                r.raise_for_status()
+                return {"action": action, "result": r.json()}
+
+            elif action == "list_tools":
+                tools = registry.list_tools()
+                return {"action": action, "result": {"tools": tools, "count": len(tools)}}
+
+            elif action == "get_memory":
+                conv_id = params.get("conversation_id")
+                if not conv_id:
+                    raise HTTPException(status_code=400, detail="conversation_id required")
+                return {"action": action, "result": memory.get_history(conv_id)}
+
+            elif action == "clear_memory":
+                conv_id = params.get("conversation_id")
+                if conv_id:
+                    memory.clear(conv_id)
+                return {"action": action, "result": "cleared"}
+
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unknown action: {action}. Supported: list_jobs, get_job, get_stats, list_tools, get_memory, clear_memory",
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"ai_execute error: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/pipeline")

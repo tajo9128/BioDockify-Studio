@@ -4,6 +4,7 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
@@ -25,23 +26,6 @@ export default {
         },
         error: {
           DEFAULT: '#dc2626',
-        },
-        background: {
-          sidebar: '#1a1a2e',
-          dark: '#0f0f1a',
-          tertiary: '#f8fafc',
-        },
-        surface: {
-          DEFAULT: '#ffffff',
-          secondary: '#f1f5f9',
-        },
-        border: {
-          light: '#e2e8f0',
-        },
-        text: {
-          primary: '#1e293b',
-          secondary: '#64748b',
-          tertiary: '#94a3b8',
         },
       },
       fontFamily: {

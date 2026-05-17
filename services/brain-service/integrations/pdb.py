@@ -1,5 +1,5 @@
 """
-PDB integration for Nanobot Brain
+PDB integration for BioDockify AI Brain
 """
 
 import httpx

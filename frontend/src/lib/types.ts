@@ -42,6 +42,31 @@ export interface DockingResult {
   rf_score?: number
   consensus?: number
   pdb_data?: string
+  mode?: number
+  hydrophobic_term?: number
+  rotatable_penalty?: number
+  lipo_contact?: number
+  composite_score?: number
+  final_score?: number
+  constraint_penalty?: number
+}
+
+export interface DockingJob {
+  id: number
+  job_uuid: string
+  job_name: string
+  receptor_file: string
+  ligand_file: string
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+  created_at: string
+  completed_at?: string
+  binding_energy?: number
+  confidence_score?: number
+  engine: string
+  receptor_content?: string
+  ligand_pdb?: string
+  results?: DockingResult[]
+  download_urls?: Record<string, string>
 }
 
 export interface Interaction {
@@ -91,6 +116,8 @@ export interface RMSDResponse {
 
 export interface ChatRequest {
   message: string
+  conversation_id?: string
+  provider_override?: string  // 'ollama' | 'paid' | undefined
 }
 
 export interface ChatResponse {
@@ -98,11 +125,31 @@ export interface ChatResponse {
   provider: string
   available: boolean
   tools_used?: string[]
+  conversation_id?: string
+  model?: string
   error?: string
+}
+
+export interface PlatformContext {
+  stats: { total_jobs: number; services: Record<string, string> }
+  recent_jobs: Array<{
+    job_uuid?: string
+    job_name?: string
+    status: string
+    engine?: string
+    created_at?: string
+    binding_energy?: number
+  }>
+  services: Record<string, string>
+  tools_count: number
+  tools: string[]
+  provider: string
+  model?: string
 }
 
 export interface ChatStatus {
   provider: string
+  provider_available: boolean
   ollama_available: boolean
   models: string[]
   error?: string

@@ -122,3 +122,47 @@ export const SAMPLE_LIBRARY = [
   'OC[C@H]1OC(O)[C@H](O)[C@@H](O)[C@@H]1O', // glucose
   'c1ccccc1', // benzene
 ]
+
+export interface HypothesisResult {
+  success: boolean
+  hypothesis?: Array<{
+    type: string
+    center: number[]
+    radius: number
+    color: string
+    coverage: number
+  }>
+  n_features?: number
+  n_molecules?: number
+  score?: number
+  feature_types?: string[]
+  error?: string
+}
+
+export interface ExclusionVolumeResult {
+  success: boolean
+  exclusion_spheres?: Array<{
+    center: number[]
+    radius: number
+    color: string
+    type: string
+    residue: string
+    element: string
+    alpha: number
+  }>
+  n_spheres?: number
+  n_receptor_atoms?: number
+  error?: string
+}
+
+export async function generateHypothesis(_activeSmiles: string[], _minFeatures: number = 3, _maxFeatures: number = 6): Promise<HypothesisResult> {
+  // Note: Backend route not yet implemented - placeholder
+  console.warn('Hypothesis generation endpoint not available on backend')
+  return { success: false, error: 'Hypothesis generation not yet available' }
+}
+
+export async function generateExclusionVolumes(_receptorPdb: string, _ligandCenter?: number[], _cutoff: number = 5.0): Promise<ExclusionVolumeResult> {
+  // Note: Backend route not yet implemented - placeholder
+  console.warn('Exclusion volumes endpoint not available on backend')
+  return { success: false, error: 'Exclusion volumes not yet available' }
+}

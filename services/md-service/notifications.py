@@ -57,6 +57,10 @@ class NotificationManager:
         self.feishu_app_id = os.getenv("FEISHU_APP_ID", "")
         self.feishu_app_secret = os.getenv("FEISHU_APP_SECRET", "")
         self.feishu_default_open_id = os.getenv("FEISHU_DEFAULT_OPEN_ID", "")
+        self.dingtalk_client_id = os.getenv("DINGTALK_CLIENT_ID", "")
+        self.dingtalk_client_secret = os.getenv("DINGTALK_CLIENT_SECRET", "")
+        self.dingtalk_default_user = os.getenv("DINGTALK_DEFAULT_USER", "")
+        self.qq_secret = os.getenv("QQ_SECRET", "")
 
     def send(
         self, event: str, title: str, message: str, details: Optional[Dict] = None

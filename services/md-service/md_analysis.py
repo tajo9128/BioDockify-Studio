@@ -13,6 +13,21 @@ import numpy as np
 logger = logging.getLogger("md-analysis")
 
 
+def _positions_to_array(positions) -> np.ndarray:
+    """Convert OpenMM positions (Vec3 or Quantity) to numpy array in nm."""
+    arr = []
+    for p in positions:
+        if hasattr(p, "value_in_unit"):
+            from openmm import unit
+            v = p.value_in_unit(unit.nanometer)
+            arr.append([float(v.x), float(v.y), float(v.z)])
+        elif hasattr(p, "x"):
+            arr.append([float(p.x), float(p.y), float(p.z)])
+        else:
+            arr.append([float(p[0]), float(p[1]), float(p[2])])
+    return np.array(arr)
+
+
 class RMSDAnalyzer:
     """Calculate RMSD of MD trajectory"""
 
@@ -29,23 +44,21 @@ class RMSDAnalyzer:
     ) -> Dict[str, Any]:
         """Calculate RMSD over trajectory frames"""
         try:
-            import openmm as mm
             import openmm.app as app
-            from openmm import unit
             from io import StringIO
 
             ref_pdb = reference_pdb if reference_pdb else trajectory_pdb
-
-            traj_ref = app.PDBFile(open(trajectory_pdb).read())
-            ref_pos = traj_ref.positions
 
             frames = self._read_trajectory_frames(trajectory_pdb)
             if not frames:
                 return {"success": False, "error": "No frames found in trajectory"}
 
+            ref_pos = _positions_to_array(frames[0])
+
             rmsd_values = []
             for frame_pos in frames:
-                rmsd = self._compute_rmsd(frame_pos, ref_pos)
+                frame_arr = _positions_to_array(frame_pos)
+                rmsd = self._compute_rmsd(frame_arr, ref_pos)
                 rmsd_values.append(rmsd)
 
             output_path = self.storage_dir / output_file
@@ -93,10 +106,10 @@ class RMSDAnalyzer:
         except Exception:
             return []
 
-    def _compute_rmsd(self, positions1, positions2) -> float:
-        """Compute RMSD between two sets of positions"""
-        diff = positions1 - positions2
-        dist_sq = sum(d.x**2 + d.y**2 + d.z**2 for d in diff) / len(diff)
+    def _compute_rmsd(self, arr1: np.ndarray, arr2: np.ndarray) -> float:
+        """Compute RMSD between two sets of positions (nm arrays)."""
+        diff = arr1 - arr2
+        dist_sq = np.mean(np.sum(diff ** 2, axis=1))
         return float(np.sqrt(dist_sq))
 
     def _make_plot(
@@ -142,21 +155,19 @@ class RMSFAnalyzer:
     ) -> Dict[str, Any]:
         """Calculate per-residue RMSF"""
         try:
-            import openmm.app as app
-            from io import StringIO
-
             frames = self._read_trajectory_frames(trajectory_pdb)
             if not frames:
                 return {"success": False, "error": "No frames found"}
 
             ref_positions = frames[0]
             n_atoms = len(ref_positions)
+            ref_arr = _positions_to_array(ref_positions)
 
             rmsf_per_atom = np.zeros(n_atoms)
             for frame_pos in frames:
-                for i in range(n_atoms):
-                    diff = frame_pos[i] - ref_positions[i]
-                    rmsf_per_atom[i] += diff.x**2 + diff.y**2 + diff.z**2
+                frame_arr = _positions_to_array(frame_pos)
+                diff = frame_arr - ref_arr
+                rmsf_per_atom += np.sum(diff ** 2, axis=1)
 
             rmsf_per_atom = np.sqrt(rmsf_per_atom / len(frames))
 
@@ -316,21 +327,15 @@ class GyrationAnalyzer:
     ) -> Dict[str, Any]:
         """Calculate radius of gyration per frame"""
         try:
-            import openmm.app as app
-            from openmm import unit
-            from io import StringIO
-
             frames = self._read_frames(trajectory_pdb)
             if not frames:
                 return {"success": False, "error": "No frames found"}
 
             rg_values = []
             for frame_pos in frames:
-                com = sum(frame_pos) / len(frame_pos)
-                rg_sq = sum(
-                    (p.x - com.x) ** 2 + (p.y - com.y) ** 2 + (p.z - com.z) ** 2
-                    for p in frame_pos
-                ) / len(frame_pos)
+                frame_arr = _positions_to_array(frame_pos)
+                com = np.mean(frame_arr, axis=0)
+                rg_sq = np.mean(np.sum((frame_arr - com) ** 2, axis=1))
                 rg_values.append(float(np.sqrt(rg_sq)))
 
             output_path = self.storage_dir / output_file
@@ -396,7 +401,7 @@ class GyrationAnalyzer:
 
 
 class SASAAnalyzer:
-    """Calculate solvent accessible surface area"""
+    """Calculate solvent accessible surface area using Shrake-Rupley algorithm"""
 
     def __init__(self, storage_dir: Path):
         self.storage_dir = Path(storage_dir) / "analysis"
@@ -405,13 +410,8 @@ class SASAAnalyzer:
     def calculate(
         self, trajectory_pdb: str, output_file: str = "sasa.csv"
     ) -> Dict[str, Any]:
-        """Calculate SASA per frame"""
+        """Calculate SASA per frame using Shrake-Rupley algorithm"""
         try:
-            import openmm as mm
-            import openmm.app as app
-            from openmm import unit
-            from io import StringIO
-
             frames = self._read_frames(trajectory_pdb)
             if not frames:
                 return {"success": False, "error": "No frames found"}
@@ -419,10 +419,12 @@ class SASAAnalyzer:
             sasa_values = []
             for frame_pos in frames:
                 try:
-                    app.PDBFile(StringIO(""))
-                except Exception:
-                    pass
-                sasa_values.append(0.0)
+                    frame_arr = _positions_to_array(frame_pos)
+                    sasa = self._calculate_sasa_shrake_rupley(frame_arr)
+                    sasa_values.append(round(sasa, 4))
+                except Exception as e:
+                    logger.warning(f"SASA frame calculation failed: {e}")
+                    sasa_values.append(0.0)
 
             output_path = self.storage_dir / output_file
             with open(output_path, "w") as f:
@@ -444,7 +446,7 @@ class SASAAnalyzer:
                 "layout": {
                     "title": {"text": "Solvent Accessible Surface Area"},
                     "xaxis": {"title": "Frame"},
-                    "yaxis": {"title": "SASA (nm²)"},
+                    "yaxis": {"title": "SASA (nm\u00b2)"},
                     "width": 600,
                     "height": 350,
                     "margin": dict(l=60, r=20, t=50, b=60),
@@ -481,6 +483,36 @@ class SASAAnalyzer:
             return frames if frames else [app.PDBFile(open(pdb_path).read()).positions]
         except Exception:
             return []
+
+    def _calculate_sasa_shrake_rupley(
+        self, coords: np.ndarray, probe_radius: float = 0.14, n_points: int = 96
+    ) -> float:
+        """Simple Shrake-Rupley SASA calculation in nm."""
+        indices = np.arange(0, n_points, dtype=float) + 0.5
+        phi = np.arccos(1 - 2 * indices / n_points)
+        theta = np.pi * (1 + 5**0.5) * indices
+
+        points = np.zeros((n_points, 3))
+        points[:, 0] = np.sin(phi) * np.cos(theta)
+        points[:, 1] = np.sin(phi) * np.sin(theta)
+        points[:, 2] = np.cos(phi)
+
+        radii = np.full(len(coords), 0.17 + probe_radius)
+
+        total_area = 0.0
+        for i in range(len(coords)):
+            test_points = coords[i] + radii[i] * points
+            accessible = np.ones(n_points, dtype=bool)
+
+            for j in range(len(coords)):
+                if i == j:
+                    continue
+                dist_sq = np.sum((test_points - coords[j]) ** 2, axis=1)
+                accessible &= dist_sq > (radii[j] ** 2)
+
+            total_area += 4 * np.pi * (radii[i] ** 2) * np.mean(accessible)
+
+        return total_area
 
 
 class HydrogenBondAnalyzer:
@@ -570,14 +602,28 @@ class HydrogenBondAnalyzer:
     def _count_hbonds(
         self, positions, donor_cutoff: float, acceptor_cutoff: float
     ) -> int:
-        """Approximate H-bond count (simple distance-based)"""
+        """Count H-bonds using heavy-atom distance heuristic (cutoff in Angstrom, positions in nm)."""
         n = len(positions)
         count = 0
-        cutoff_sq = donor_cutoff**2
+        cutoff_nm = donor_cutoff / 10.0  # Convert A to nm
+        cutoff_sq = cutoff_nm**2
+
         for i in range(n):
+            pos_i = positions[i]
+            if hasattr(pos_i, "x"):
+                xi, yi, zi = pos_i.x, pos_i.y, pos_i.z
+            else:
+                xi, yi, zi = pos_i[0], pos_i[1], pos_i[2]
+
             for j in range(i + 1, n):
-                diff = positions[i] - positions[j]
-                dist_sq = diff.x**2 + diff.y**2 + diff.z**2
+                pos_j = positions[j]
+                if hasattr(pos_j, "x"):
+                    xj, yj, zj = pos_j.x, pos_j.y, pos_j.z
+                else:
+                    xj, yj, zj = pos_j[0], pos_j[1], pos_j[2]
+
+                dist_sq = (xi - xj)**2 + (yi - yj)**2 + (zi - zj)**2
                 if dist_sq < cutoff_sq:
                     count += 1
-        return count // 2
+
+        return max(0, count)

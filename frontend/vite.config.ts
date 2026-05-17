@@ -1,19 +1,45 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { nodePolyfills } from 'vite-plugin-node-polyfills'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    nodePolyfills({
+      include: ['buffer'],
+      globals: {
+        global: true,
+        buffer: true,
+      },
+    }),
+  ],
   base: '/',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
   },
+  optimizeDeps: {
+    include: ['bowser', 'plotly.js', 'react-plotly.js', 'ketcher-core', 'ketcher-react', 'ketcher-standalone'],
+    exclude: [],
+  },
   build: {
-    outDir: './dist',
+    outDir: '../backend/static',
     emptyOutDir: true,
     sourcemap: false,
+    commonjsOptions: {
+      transformMixedEsModules: true,
+    },
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          ketcher: ['ketcher-core', 'ketcher-standalone', 'ketcher-react'],
+          plotly: ['plotly.js', 'react-plotly.js'],
+        },
+      },
+    },
   },
   server: {
     port: 5173,
@@ -81,6 +107,15 @@ export default defineConfig({
       '/rdkit': {
         target: 'http://localhost:8000',
         changeOrigin: true,
+      },
+      '/batch': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/brain': {
+        target: 'http://localhost:8010',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/brain/, ''),
       },
     },
   },

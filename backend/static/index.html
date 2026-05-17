@@ -9,10 +9,19 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <script src="https://3Dmol.org/build/3Dmol-min.js"></script>
-    <script type="module" crossorigin src="/assets/index-CBKLt1tU.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-DJ48GBLZ.css">
+    <script>
+      // Polyfill for Node.js buffer module required by some dependencies
+      window.global = window.globalThis || window;
+    </script>
+    <script type="module" crossorigin src="/assets/index-B_y5U0Fg.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vendor-DoZ71bsC.js">
+    <link rel="modulepreload" crossorigin href="/assets/ketcher-Ydqz7nIl.js">
+    <link rel="modulepreload" crossorigin href="/assets/plotly-CDE0Nkga.js">
+    <link rel="stylesheet" crossorigin href="/assets/ketcher-CZRiVS_N.css">
+    <link rel="stylesheet" crossorigin href="/assets/plotly-CuCRB34y.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-RZc9TzKZ.css">
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"></div>
   </body>
 </html>

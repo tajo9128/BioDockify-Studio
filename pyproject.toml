@@ -13,14 +13,14 @@ Documentation = "https://github.com/tajo9128/Docking-studio/wiki"
 "Bug Tracker" = "https://github.com/tajo9128/Docking-studio/issues"
 
 [project.scripts]
-BioDockify = "BioDockify.main:main"
+biodockify = "app.launcher:main"
 
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["BioDockify"]
+packages = ["app", "backend", "backend.ai", "backend.api", "backend.chemistry", "backend.crew"]
 
 [tool.pyinstaller]
 name = "BioDockify"
@@ -56,7 +56,7 @@ exclude = '''
 )'''
 
 [tool.pytest.ini_options]
-testpaths = ["BioDockify"]
-python_files = "BioDockify/**/*.py"
-python_functions = "BioDockify/**/*test_*.py"
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
 addopts = "-ra -q -v"

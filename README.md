@@ -1,7 +1,7 @@
-# Biodockify Studio AI
+# BioDockify Studio
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-2.3.3-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Version-4.4.2-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/Python-3.11-green.svg" alt="Python">
   <img src="https://img.shields.io/badge/License-MIT-purple.svg" alt="License">
 </p>
@@ -30,16 +30,18 @@ An intelligent molecular docking platform with Discovery Studio-inspired UI, AI-
 - TPSA (Topological Polar Surface Area)
 - Rotatable bonds analysis
 
-### 🧪 Molecular Docking
+### 🧪 Molecular Docking (Smart Energy-Based Routing)
 - **AutoDock Vina 1.2** — High-precision empirical scoring function
 - **GNINA** — CNN-based deep learning scoring (CNN, CNN affinity, CNN pose)
 - **RF (Random Forest) Score** — Machine learning based rescoring
-- **vinardo** — Optimized empirical scoring function
-- SMILES to PDB/PDBQT preparation (Meeko + RDKit)
+- **Smart Routing:**
+  - Energy ≤ -5.0 kcal/mol → **Vina only** → Returns log, docking, grid files
+  - Energy > -5.0 kcal/mol → **GNINA + RF** → Returns all files (Vina + GNINA outputs)
+- RDKit-only file preparation (no Meeko/OpenBabel)
 - Flexible ligand & rigid receptor docking
 - Grid box auto-detection
-- Batch docking (multiple ligands)
 - Real-time job tracking & pose visualization
+- **Downloadable output files:** Log, Docking PDBQT, Grid configuration
 
 ### 📊 Molecular Dynamics
 - OpenMM simulation engine
@@ -60,14 +62,14 @@ An intelligent molecular docking platform with Discovery Studio-inspired UI, AI-
 
 ```bash
 # Pull and run
-docker pull tajo9128/biodockify:latest
-docker run -p 8000:8000 tajo9128/biodockify:latest
+docker pull tajo9128/biodockify-studio-ai:latest
+docker run -p 8000:8000 tajo9128/biodockify-studio-ai:latest
 
 # Or build locally
-git clone https://github.com/tajo9128/BioDockify-Studio-AI.git
-cd BioDockify-Studio-AI
-docker build -f Dockerfile.single -t biodockify .
-docker run -p 8000:8000 biodockify
+git clone https://github.com/tajo9128/BioDockify-Docking-Studio-AI.git
+cd BioDockify-Docking-Studio-AI
+docker build -f Dockerfile.single -t biodockify-studio-ai .
+docker run -p 8000:8000 biodockify-studio-ai
 ```
 
 Then open **http://localhost:8000** in your browser.
@@ -118,7 +120,7 @@ Pre-loaded with 12 FDA-approved drugs:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    Biodockify Studio AI v2.3.3                           │
+│                    BioDockify Studio AI v4.4.2                           │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  Frontend (SPA - embedded HTML/JS)                                       │
 │  ├── ChemDraw Panel (smiles-drawer + Ketcher)                          │
@@ -170,10 +172,9 @@ Pre-loaded with 12 FDA-approved drugs:
 
 | Image | Description |
 |-------|-------------|
-| `tajo9128/biodockify:latest` | Latest release |
-| `tajo9128/biodockify:v2.3.3` | Versioned release |
-| `tajo9128/docking-studio:latest` | Legacy tag |
-| `tajo9128/docking-studio:full-latest` | Full microservices |
+| `tajo9128/biodockify-studio-ai:latest` | Latest release |
+| `tajo9128/biodockify-studio-ai:v4.4.2` | Versioned release |
+| `tajo9128/biodockify-studio-ai:full` | Full stack (Vina/GNINA/RF) |
 
 ## Development
 

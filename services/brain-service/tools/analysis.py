@@ -1,5 +1,5 @@
 """
-Analysis tools for Nanobot Brain
+Analysis tools for BioDockify AI Brain
 """
 
 import httpx

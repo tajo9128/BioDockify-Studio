@@ -1,8 +1,40 @@
-# Docking Studio v2.0 - Microservices Architecture
+# BioDockify Studio AI v4.4.2 - Microservices Architecture
 # One-command startup: docker compose up
 # Access via: http://localhost:8000
 
 services:
+  # =========================================================
+  # Ollama - Local LLM Service
+  # =========================================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: docking-ollama
+    hostname: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - docking-network
+
   # =========================================================
   # Gateway - Nginx reverse proxy + React UI
   # =========================================================
@@ -24,7 +56,7 @@ services:
       - docking-network
 
   # =========================================================
-  # Brain Service - Nanobot AI Brain (Strategist)
+  # Brain Service - BioDockify AI Brain (Strategist)
   # =========================================================
   brain-service:
     build:
@@ -42,7 +74,7 @@ services:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
       - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://dockuser:dockpass@postgres:5432/docking
+      - DATABASE_URL=postgresql://dockuser:${POSTGRES_PASSWORD:-dockpass}@postgres:5432/docking
       - API_BACKEND_URL=http://api-backend:8000
     depends_on:
       redis:
@@ -84,7 +116,7 @@ services:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
       - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://dockuser:dockpass@postgres:5432/docking
+      - DATABASE_URL=postgresql://dockuser:${POSTGRES_PASSWORD:-dockpass}@postgres:5432/docking
       - BRAIN_SERVICE_URL=http://brain-service:8000
       - DOCKING_SERVICE_URL=http://docking-service:8000
       - RDKIT_SERVICE_URL=http://rdkit-service:8000
@@ -133,7 +165,7 @@ services:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
       - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://dockuser:dockpass@postgres:5432/docking
+      - DATABASE_URL=postgresql://dockuser:${POSTGRES_PASSWORD:-dockpass}@postgres:5432/docking
     depends_on:
       redis:
         condition: service_healthy
@@ -153,6 +185,10 @@ services:
         reservations:
           cpus: '2.0'
           memory: 2G
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     networks:
       - docking-network
 
@@ -176,7 +212,7 @@ services:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
       - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://dockuser:dockpass@postgres:5432/docking
+      - DATABASE_URL=postgresql://dockuser:${POSTGRES_PASSWORD:-dockpass}@postgres:5432/docking
     depends_on:
       redis:
         condition: service_healthy
@@ -216,7 +252,7 @@ services:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
       - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://dockuser:dockpass@postgres:5432/docking
+      - DATABASE_URL=postgresql://dockuser:${POSTGRES_PASSWORD:-dockpass}@postgres:5432/docking
     depends_on:
       redis:
         condition: service_healthy
@@ -295,6 +331,8 @@ services:
       - LOG_LEVEL=INFO
       - REDIS_URL=redis://redis:6379
       - API_BACKEND_URL=http://api-backend:8000
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
       - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
@@ -326,6 +364,10 @@ services:
         reservations:
           cpus: '1.0'
           memory: 2G
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     networks:
       - docking-network
 
@@ -400,6 +442,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
+      - REDIS_URL=redis://redis:6379
     depends_on:
       redis:
         condition: service_healthy
@@ -429,7 +472,7 @@ services:
     hostname: redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
@@ -455,13 +498,13 @@ services:
     hostname: postgres
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./services/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     environment:
       - POSTGRES_USER=dockuser
-      - POSTGRES_PASSWORD=dockpass
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dockpass}
       - POSTGRES_DB=docking
       - PGDATA=/var/lib/postgresql/data/pgdata
     healthcheck:
@@ -495,7 +538,7 @@ services:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
       - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://dockuser:dockpass@postgres:5432/docking
+      - DATABASE_URL=postgresql://dockuser:${POSTGRES_PASSWORD:-dockpass}@postgres:5432/docking
       - AI_MODE=autonomous
       - DOCKING_SERVICE_URL=http://docking-service:8000
       - RDKIT_SERVICE_URL=http://rdkit-service:8000
@@ -508,6 +551,12 @@ services:
       postgres:
         condition: service_healthy
       docking-service:
+        condition: service_healthy
+      pharmacophore-service:
+        condition: service_healthy
+      md-service:
+        condition: service_healthy
+      analysis-service:
         condition: service_healthy
     deploy:
       resources:
@@ -535,6 +584,8 @@ volumes:
   postgres-data:
     driver: local
   vina-cache:
+    driver: local
+  ollama-data:
     driver: local
 
 networks:

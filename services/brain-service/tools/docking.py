@@ -1,5 +1,5 @@
 """
-Docking tools for Nanobot Brain
+Docking tools for BioDockify AI Brain
 """
 
 import httpx

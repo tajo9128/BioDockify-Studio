@@ -1,5 +1,5 @@
 """
-Docking Studio v2.0 - Nanobot Brain Tool System
+Docking Studio v2.0 - BioDockify AI Brain Tool System
 Plugin-based architecture for drug discovery tools
 """
 
@@ -28,7 +28,7 @@ class ToolOutput(BaseModel):
 
 
 class BaseTool(ABC):
-    """Abstract base class for all Nanobot tools"""
+    """Abstract base class for all BioDockify AI tools"""
 
     name: str = ""
     description: str = ""
@@ -60,7 +60,7 @@ class BaseTool(ABC):
 
 
 class ToolRegistry:
-    """Dynamic registry for Nanobot tools"""
+    """Dynamic registry for BioDockify AI tools"""
 
     _instance = None
     _tools: Dict[str, BaseTool] = {}

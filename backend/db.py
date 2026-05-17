@@ -27,9 +27,25 @@ def init_db():
             completed_at DATETIME,
             binding_energy REAL,
             confidence_score REAL,
-            engine TEXT
+            engine TEXT,
+            files_json TEXT,
+            log_text TEXT,
+            receptor_name TEXT,
+            ligand_name TEXT
         )
     """)
+
+    # Migrate existing DBs: add new columns if missing
+    for col_def in [
+        ("files_json", "TEXT"),
+        ("log_text", "TEXT"),
+        ("receptor_name", "TEXT"),
+        ("ligand_name", "TEXT"),
+    ]:
+        try:
+            cur.execute(f"ALTER TABLE jobs ADD COLUMN {col_def[0]} {col_def[1]}")
+        except Exception:
+            pass  # column already exists
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS docking_results (
@@ -42,9 +58,23 @@ def init_db():
             rf_score REAL,
             consensus REAL,
             pdb_data TEXT,
+            hydrophobic_term REAL,
+            rotatable_penalty REAL,
+            lipo_contact REAL,
+            final_score REAL,
+            composite_score REAL,
+            constraint_penalty REAL,
             FOREIGN KEY (job_uuid) REFERENCES jobs(job_uuid)
         )
     """)
+
+    # Migrate existing DBs: add composite scoring columns if missing
+    for col in ['hydrophobic_term', 'rotatable_penalty', 'lipo_contact',
+                'final_score', 'composite_score', 'constraint_penalty']:
+        try:
+            cur.execute(f"ALTER TABLE docking_results ADD COLUMN {col} REAL")
+        except Exception:
+            pass  # column already exists
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS interactions (
@@ -118,9 +148,16 @@ def update_job_status(job_uuid: str, status: str, binding_energy: Optional[float
 
 def add_docking_result(job_uuid: str, pose_id: int, ligand_name: str, 
                       vina_score: Optional[float] = None, gnina_score: Optional[float] = None,
-                      rf_score: Optional[float] = None, pdb_data: Optional[str] = None) -> bool:
+                      rf_score: Optional[float] = None, pdb_data: Optional[str] = None,
+                      hydrophobic_term: Optional[float] = None,
+                      rotatable_penalty: Optional[float] = None,
+                      lipo_contact: Optional[float] = None,
+                      final_score: Optional[float] = None,
+                      composite_score: Optional[float] = None,
+                      constraint_penalty: Optional[float] = None) -> bool:
     """Add docking result for a pose"""
     try:
+        print(f"[DB] Saving result: job_uuid={job_uuid}, pose_id={pose_id}, vina={vina_score}, composite={composite_score}")
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
         
@@ -130,9 +167,14 @@ def add_docking_result(job_uuid: str, pose_id: int, ligand_name: str,
             consensus = sum(scores) / len(scores)
         
         cur.execute("""
-            INSERT INTO docking_results (job_uuid, pose_id, ligand_name, vina_score, gnina_score, rf_score, consensus, pdb_data)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (job_uuid, pose_id, ligand_name, vina_score, gnina_score, rf_score, consensus, pdb_data))
+            INSERT INTO docking_results (
+                job_uuid, pose_id, ligand_name, vina_score, gnina_score, rf_score,
+                consensus, pdb_data, hydrophobic_term, rotatable_penalty,
+                lipo_contact, final_score, composite_score, constraint_penalty
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (job_uuid, pose_id, ligand_name, vina_score, gnina_score, rf_score,
+              consensus, pdb_data, hydrophobic_term, rotatable_penalty,
+              lipo_contact, final_score, composite_score, constraint_penalty))
         
         conn.commit()
         conn.close()
@@ -160,6 +202,49 @@ def add_interaction(job_uuid: str, pose_id: int, interaction_type: str, atom_a: 
         return False
 
 
+_JOB_COLUMNS = [
+    'id', 'job_uuid', 'job_name', 'receptor_file', 'ligand_file', 'status',
+    'created_at', 'completed_at', 'binding_energy', 'confidence_score', 'engine',
+    'files_json', 'log_text', 'receptor_name', 'ligand_name',
+]
+
+
+def update_job_files(
+    job_uuid: str,
+    files_json: Optional[str] = None,
+    log_text: Optional[str] = None,
+    receptor_name: Optional[str] = None,
+    ligand_name: Optional[str] = None,
+) -> bool:
+    """Persist file paths, log, and name metadata for a completed job."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        parts, params = [], []
+        if files_json is not None:
+            parts.append("files_json = ?")
+            params.append(files_json)
+        if log_text is not None:
+            parts.append("log_text = ?")
+            params.append(log_text[:65536])  # cap at 64 KB
+        if receptor_name is not None:
+            parts.append("receptor_name = ?")
+            params.append(receptor_name)
+        if ligand_name is not None:
+            parts.append("ligand_name = ?")
+            params.append(ligand_name)
+        if not parts:
+            return True
+        params.append(job_uuid)
+        cur.execute(f"UPDATE jobs SET {', '.join(parts)} WHERE job_uuid = ?", params)
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error updating job files: {e}")
+        return False
+
+
 def get_job(job_uuid: str) -> Optional[Dict[str, Any]]:
     """Get job by UUID"""
     try:
@@ -168,11 +253,8 @@ def get_job(job_uuid: str) -> Optional[Dict[str, Any]]:
         cur.execute("SELECT * FROM jobs WHERE job_uuid = ?", (job_uuid,))
         row = cur.fetchone()
         conn.close()
-        
         if row:
-            columns = ['id', 'job_uuid', 'job_name', 'receptor_file', 'ligand_file', 'status', 
-                      'created_at', 'completed_at', 'binding_energy', 'confidence_score', 'engine']
-            return dict(zip(columns, row))
+            return dict(zip(_JOB_COLUMNS, row))
         return None
     except Exception as e:
         print(f"Error getting job: {e}")
@@ -187,26 +269,36 @@ def get_all_jobs(limit: int = 50) -> List[Dict[str, Any]]:
         cur.execute("SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,))
         rows = cur.fetchall()
         conn.close()
-        
-        columns = ['id', 'job_uuid', 'job_name', 'receptor_file', 'ligand_file', 'status',
-                  'created_at', 'completed_at', 'binding_energy', 'confidence_score', 'engine']
-        return [dict(zip(columns, row)) for row in rows]
+        return [dict(zip(_JOB_COLUMNS, row)) for row in rows]
     except Exception as e:
         print(f"Error getting jobs: {e}")
         return []
 
 
+def get_job_full(job_uuid: str) -> Optional[Dict[str, Any]]:
+    """Get job + all docking results from DB (for history restore)."""
+    job = get_job(job_uuid)
+    if not job:
+        return None
+    results = get_docking_results(job_uuid)
+    job["results"] = results
+    return job
+
+
 def get_docking_results(job_uuid: str) -> List[Dict[str, Any]]:
     """Get docking results for a job"""
     try:
+        print(f"[DB] Getting results for job_uuid={job_uuid}, DB_PATH={DB_PATH}")
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
         cur.execute("SELECT * FROM docking_results WHERE job_uuid = ? ORDER BY pose_id", (job_uuid,))
         rows = cur.fetchall()
+        print(f"[DB] Found {len(rows)} rows for job_uuid={job_uuid}")
         conn.close()
         
         columns = ['id', 'job_uuid', 'pose_id', 'ligand_name', 'vina_score', 'gnina_score', 
-                  'rf_score', 'consensus', 'pdb_data']
+                  'rf_score', 'consensus', 'pdb_data', 'hydrophobic_term', 'rotatable_penalty',
+                  'lipo_contact', 'final_score', 'composite_score', 'constraint_penalty']
         return [dict(zip(columns, row)) for row in rows]
     except Exception as e:
         print(f"Error getting results: {e}")

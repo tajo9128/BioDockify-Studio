@@ -1,5 +1,5 @@
 """
-Pharmacophore tools for Nanobot Brain
+Pharmacophore tools for BioDockify AI Brain
 """
 
 import httpx

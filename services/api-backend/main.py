@@ -41,7 +41,7 @@ PHARMACOPHORE_SERVICE_URL = os.getenv(
     "PHARMACOPHORE_SERVICE_URL", "http://pharmacophore-service:8004"
 )
 QSAR_SERVICE_URL = os.getenv("QSAR_SERVICE_URL", "http://qsar-service:8005")
-MD_SERVICE_URL = os.getenv("MD_SERVICE_URL", "http://md-service:8006")
+MD_SERVICE_URL = os.getenv("MD_SERVICE_URL", "http://md-service:8000")
 SENTINEL_SERVICE_URL = os.getenv("SENTINEL_SERVICE_URL", "http://sentinel-service:8007")
 ANALYSIS_SERVICE_URL = os.getenv("ANALYSIS_SERVICE_URL", "http://analysis-service:8008")
 BRAIN_SERVICE_URL = os.getenv("BRAIN_SERVICE_URL", "http://brain-service:8000")
@@ -52,6 +52,13 @@ STORAGE_DIR = Path("/app/storage")
 UPLOADS_DIR = Path("/app/uploads")
 STORAGE_DIR.mkdir(exist_ok=True)
 UPLOADS_DIR.mkdir(exist_ok=True)
+
+
+def _safe_filename(filename: str) -> str:
+    safe_name = Path(filename or "").name
+    if not safe_name or safe_name in {".", ".."} or safe_name != (filename or ""):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    return safe_name
 
 # Auth settings
 API_KEY = os.getenv("API_KEY", "")  # Set to enable auth
@@ -164,9 +171,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"]
-    if AUTH_DISABLED
-    else ["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -216,7 +221,8 @@ async def root():
 async def upload_file(file: UploadFile = File(...)):
     """Upload a molecule or protein file"""
     try:
-        file_path = UPLOADS_DIR / file.filename
+        safe_name = _safe_filename(file.filename)
+        file_path = UPLOADS_DIR / safe_name
         content = await file.read()
         file_path.write_bytes(content)
 
@@ -230,7 +236,7 @@ async def upload_file(file: UploadFile = File(...)):
             file_type = "smiles"
 
         return {
-            "filename": file.filename,
+            "filename": safe_name,
             "path": str(file_path),
             "type": file_type,
             "size": len(content),
@@ -988,6 +994,68 @@ async def md_minimize(pdb_content: str):
             raise HTTPException(status_code=500, detail=str(e))
 
 
+class MDEquilibrationRequest(BaseModel):
+    pdb_content: str
+    temperature: float = 300.0
+    pressure: float = 1.0
+    solvent_model: str = "tip3p"
+    ionic_strength: float = 0.15
+    name: str = "equilibration"
+
+
+@app.post("/md/equilibration")
+async def md_equilibration(request: MDEquilibrationRequest):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.post(
+                f"{MD_SERVICE_URL}/equilibration",
+                json=request.model_dump(),
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/md/resume")
+async def md_resume(job_id: str, steps: int = 50000, frame_interval: int = 500):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.post(
+                f"{MD_SERVICE_URL}/resume",
+                params={"job_id": job_id, "steps": steps, "frame_interval": frame_interval},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/md/mmgbsa")
+async def md_mmgbsa(request: Dict[str, Any]):
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            response = await client.post(
+                f"{MD_SERVICE_URL}/mmgbsa",
+                json=request,
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/md/gpu/status")
+async def md_gpu_status():
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(f"{MD_SERVICE_URL}/gpu/status")
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/md/health")
 async def md_health():
     async with httpx.AsyncClient(timeout=10.0) as client:
@@ -1137,7 +1205,7 @@ def list_db_jobs(limit: int = 50, db: Session = Depends(get_db)):
 
 
 # ============================================================
-# Nanobot Memory - User profiles, long-term memory, conversation history
+# BioDockify AI Memory - User profiles, long-term memory, conversation history
 # ============================================================
 
 
@@ -1999,6 +2067,12 @@ async def get_llm_settings():
     return {**llm_settings, "api_key": "***" if llm_settings.get("api_key") else ""}
 
 
+@app.get("/llm/settings/raw")
+async def get_llm_settings_raw():
+    """Internal endpoint: returns settings with actual API key (used by brain-service on Docker network only)."""
+    return llm_settings
+
+
 class LLMSettingsUpdate(BaseModel):
     provider: Optional[str] = None
     model: Optional[str] = None
@@ -2267,15 +2341,15 @@ async def run_security_scan():
 async def download_file(filename: str):
     """Download a file from storage"""
     from fastapi.responses import FileResponse
-    import os
 
-    storage_path = STORAGE_DIR / filename
-    uploads_path = UPLOADS_DIR / filename
+    safe_name = _safe_filename(filename)
+    storage_path = STORAGE_DIR / safe_name
+    uploads_path = UPLOADS_DIR / safe_name
 
     if storage_path.exists():
-        return FileResponse(storage_path, filename=filename)
+        return FileResponse(storage_path, filename=safe_name)
     elif uploads_path.exists():
-        return FileResponse(uploads_path, filename=filename)
+        return FileResponse(uploads_path, filename=safe_name)
     else:
         raise HTTPException(status_code=404, detail="File not found")
 

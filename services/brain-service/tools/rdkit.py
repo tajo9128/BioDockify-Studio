@@ -1,5 +1,5 @@
 """
-RDKit tools for Nanobot Brain
+RDKit tools for BioDockify AI Brain
 """
 
 import httpx

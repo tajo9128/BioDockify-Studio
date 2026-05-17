@@ -1,22 +1,72 @@
-# Biodockify Studio AI - Single container with RDKit
-FROM python:3.11-slim
+# BioDockify Studio AI - Single Container v4.4.4
+# All-in-one: React frontend + FastAPI backend + RDKit + CrewAI + GPU support
+
+# Stage 1: Build React frontend
+FROM node:20-alpine AS frontend-builder
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN NODE_OPTIONS="--max-old-space-size=4096" npm run build
+
+# Stage 2: Python with RDKit and scientific packages (CUDA base for GPU)
+FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
+
+LABEL maintainer="BioDockify"
+LABEL description="BioDockify Studio AI v4.4.4 - Single container with RDKit + CrewAI + GPU"
+LABEL version="4.4.4"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
+# Install system dependencies + Python
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget curl bzip2 ca-certificates tzdata && rm -rf /var/lib/apt/lists/*
+    python3.11 python3.11-venv python3-pip \
+    wget curl bzip2 ca-certificates tzdata \
+    libglib2.0-0 libsm6 libxml2 libxslt1.1 libxrender1 libxext6 \
+    openbabel \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python
+
+# Install GNINA CLI from GitHub release (with retry fallback)
+RUN wget --tries=3 --timeout=30 -q https://github.com/gnina/gnina/releases/download/v1.0.3/gnina -O /usr/local/bin/gnina \
+    && chmod +x /usr/local/bin/gnina || echo "GNINA download failed - continuing without it"
+
+# Install AutoDock Vina CLI binary (with retry fallback)
+RUN wget --tries=3 --timeout=30 -q https://github.com/ccsb-scripps/AutoDock-Vina/releases/download/v1.2.5/vina_1.2.5_linux_x86_64 -O /usr/local/bin/vina \
+    && chmod +x /usr/local/bin/vina || echo "Vina CLI download failed - continuing without it"
 
 RUN pip install --no-cache-dir \
     rdkit-pypi==2022.9.5 \
-    fastapi==0.109.2 uvicorn[standard]==0.27.1 \
-    python-multipart==0.0.9 pydantic==2.6.1 \
-    pydantic-settings==2.1.0 httpx==0.26.0
+    vina>=1.2.5 \
+    meeko>=0.5.0 \
+    gemmi>=0.6.4 \
+    openbabel-wheel \
+    fastapi==0.109.2 \
+    uvicorn[standard]==0.27.1 \
+    python-multipart==0.0.9 \
+    pydantic==2.6.1 \
+    httpx==0.26.0 \
+    sqlalchemy \
+    biopython \
+    "numpy<2" \
+    requests \
+    pyyaml
 
-COPY app.py /app/
-RUN mkdir -p /app/data/jobs /app/data/ligands
+COPY backend/requirements.txt /app/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt || true
+
+COPY backend/ /app/backend/
+
+# Copy built frontend from builder
+COPY --from=frontend-builder /app/backend/static /app/backend/static/
+
+RUN mkdir -p /app/backend/storage /app/backend/static/assets
 
 EXPOSE 8000
-CMD ["python", "/app/app.py"]
+
+WORKDIR /app/backend
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -8,11 +8,11 @@ import uuid
 import json
 from datetime import datetime
 
-app = FastAPI(title='Biodockify Studio AI', version='2.3.3')
+app = FastAPI(title='Biodockify Studio AI', version='4.4.4')
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['*'],
+    allow_origins=['http://localhost:3000', 'http://localhost:8000', 'http://localhost:5173'],
     allow_credentials=True,
     allow_methods=['*'],
     allow_headers=['*'],
@@ -141,7 +141,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
         </div>
         <footer class="status-bar">
             <span><span class="status-dot green"></span>Biodockify Studio AI</span>
-            <span>v2.3.3</span>
+            <span>v4.4.2</span>
         </footer>
     </div>
     <script>
@@ -392,7 +392,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
                         </div>
                     </div>
                 </div>
-                <div class="card"><h3>About</h3><p>Biodockify Studio AI v2.3.3</p><p style="color:#a0a0a0;margin-top:0.5rem">AI-Powered Autonomous Drug Discovery Platform</p></div>`
+                <div class="card"><h3>About</h3><p>Biodockify Studio AI v4.4.2</p><p style="color:#a0a0a0;margin-top:0.5rem">AI-Powered Autonomous Drug Discovery Platform</p></div>`
         };
         
         function showPage(page) {
@@ -735,7 +735,6 @@ HTML_CONTENT = '''<!DOCTYPE html>
         function saveProvider(provider) {
             const keyInput = document.getElementById(provider + '-key');
             const apiKey = keyInput ? keyInput.value.trim() : '';
-            localStorage.setItem('api_key_' + provider, apiKey);
             const statusEl = document.getElementById(provider + '-status');
             if (apiKey) {
                 statusEl.textContent = 'Saved';
@@ -761,7 +760,7 @@ async def root():
 
 @app.get('/health')
 async def health():
-    return {'status': 'healthy', 'timestamp': datetime.utcnow().isoformat(), 'version': '2.3.1'}
+    return {'status': 'healthy', 'timestamp': datetime.utcnow().isoformat(), 'version': '4.4.4'}
 
 @app.get('/api/stats')
 async def get_stats():
@@ -882,7 +881,7 @@ async def get_suggestions(req: dict):
     
     try:
         from rdkit import Chem
-        from rdkit.Chem import Lipinski, Crippen
+        from rdkit.Chem import Lipinski, Crippen, Descriptors
         
         mol = Chem.MolFromSmiles(smiles)
         if mol:
