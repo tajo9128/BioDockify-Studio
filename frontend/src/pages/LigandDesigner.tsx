@@ -142,6 +142,13 @@ export function LigandDesigner() {
   const [aiError, setAiError] = useState('')
   const [showAiPanel, setShowAiPanel] = useState(false)
   const [chemError, setChemError] = useState('')
+  const [saLoading, setSaLoading] = useState(false)
+  const [scaffoldLoading, setScaffoldLoading] = useState(false)
+  const [nmrLoading, setNmrLoading] = useState(false)
+  const [cutsLoading, setCutsLoading] = useState(false)
+  const [simLoading, setSimLoading] = useState(false)
+  const [iupacLoading, setIupacLoading] = useState(false)
+  const [inchiLoading, setInchiLoading] = useState(false)
 
   // ─── Caching helpers ──────────────────────────────────────────────────────
   const getCached = (smi: string) => smilesCache.current[smi] || null
@@ -156,8 +163,8 @@ export function LigandDesigner() {
   }, [recentMolecules])
 
   // ─── Core analysis (parallel, cached) ────────────────────────────────────
-  const triggerCoreAnalysis = useCallback(async (smi: string) => {
-    if (!smi || smi === currentSmiles.current) return
+  const triggerCoreAnalysis = useCallback(async (smi: string, force = false) => {
+    if (!smi || (!force && smi === currentSmiles.current)) return
     currentSmiles.current = smi
 
     const cached = getCached(smi)
@@ -259,8 +266,15 @@ export function LigandDesigner() {
         setEditorError('Could not load structure into editor')
       }
     }
-    triggerCoreAnalysis(smi)
-    // Reset advanced panels
+    if (smi) {
+      triggerCoreAnalysis(smi)
+      setChemError('')
+    } else {
+      setProperties({ mw: null, logp: null, hbd: null, hba: null, tpsa: null, rotatable: null, formula: null, valid: false })
+      setAlerts([])
+      setFunctionalGroups([])
+      setChemError('')
+    }
     setSaScore(null); setScaffold(''); setNmrData([]); setScaffoldCuts([])
     setSimilarMolecules([]); setDockingPrep(null); setPdb3d(''); setConformers([])
   }, [triggerCoreAnalysis])
@@ -289,38 +303,50 @@ export function LigandDesigner() {
   // ─── Advanced analysis functions ──────────────────────────────────────────
   const fetchSAScore = async () => {
     if (!smiles) return
+    setSaLoading(true)
     try {
       const res = await fetch('/api/chem/sa-score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ smiles }) })
       const d = await res.json()
       if (d.sa_score != null) setSaScore(d.sa_score)
-    } catch { /* no-op */ }
+      else setChemError(d.detail || 'SA Score calculation failed')
+    } catch { setChemError('Backend unavailable for SA Score') }
+    setSaLoading(false)
   }
 
   const fetchScaffold = async () => {
     if (!smiles) return
+    setScaffoldLoading(true)
     try {
       const res = await fetch('/api/chem/scaffold', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ smiles }) })
       const d = await res.json()
       if (d.scaffold) setScaffold(d.scaffold)
-    } catch { /* no-op */ }
+      else setChemError(d.detail || 'Scaffold extraction failed')
+    } catch { setChemError('Backend unavailable for Scaffold') }
+    setScaffoldLoading(false)
   }
 
   const fetchNMR = async () => {
     if (!smiles) return
+    setNmrLoading(true)
     try {
       const res = await fetch('/api/chem/nmr-predict', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ smiles }) })
       const d = await res.json()
       if (d.peaks) setNmrData(d.peaks)
-    } catch { /* no-op */ }
+      else setChemError(d.detail || 'NMR prediction failed')
+    } catch { setChemError('Backend unavailable for NMR') }
+    setNmrLoading(false)
   }
 
   const fetchScaffoldCuts = async () => {
     if (!smiles) return
+    setCutsLoading(true)
     try {
       const res = await fetch('/api/chem/scaffold-cuts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ smiles }) })
       const d = await res.json()
       if (d.cuts) setScaffoldCuts(d.cuts)
-    } catch { /* no-op */ }
+      else setChemError(d.detail || 'Scaffold cuts failed')
+    } catch { setChemError('Backend unavailable for Scaffold Cuts') }
+    setCutsLoading(false)
   }
 
   const fetchSimilarity = async () => {
@@ -330,31 +356,36 @@ export function LigandDesigner() {
       const res = await fetch('/api/chem/similarity-search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ smiles, threshold: 0.7, max_results: 10 }) })
       const d = await res.json()
       if (d.results) setSimilarMolecules(d.results)
-    } catch { /* no-op */ }
+      else setChemError(d.detail || 'Similarity search failed')
+    } catch { setChemError('Backend unavailable for Similarity Search') }
     setSimilarityLoading(false)
   }
 
   const fetchIUPAC = async () => {
     if (!smiles) return
+    setIupacLoading(true)
     try {
       const res = await fetch('/api/chem/iupac', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ smiles }) })
       const d = await res.json()
       setIupacName(d.iupac || 'Unavailable')
-    } catch { setIupacName('Unavailable') }
+    } catch { setIupacName('Backend unavailable') }
+    setIupacLoading(false)
   }
 
   const fetchInChI = async () => {
     if (!smiles) return
+    setInchiLoading(true)
     try {
       const res = await fetch('/api/chem/inchi', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ smiles }) })
       const d = await res.json()
       setInchi(d.inchi || ''); setInchiKey(d.inchi_key || '')
-    } catch { /* no-op */ }
+    } catch { setChemError('Backend unavailable for InChI') }
+    setInchiLoading(false)
   }
 
   const generate3D = async () => {
     if (!smiles) return
-    setLoading(true)
+    setLoading(true); setChemError('')
     try {
       const res = await fetch('/api/chem/conformers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ smiles, n_conformers: 3 }) })
       const d = await res.json()
@@ -363,22 +394,22 @@ export function LigandDesigner() {
         setConformers(list)
         setPdb3d(d.pdb || '')
         setActiveRightTab('3d')
-      }
-    } catch { /* no-op */ }
+      } else setChemError(d.detail || '3D conformer generation failed')
+    } catch { setChemError('Backend unavailable for 3D Conformers') }
     setLoading(false)
   }
 
   const prepareDocking = async () => {
     if (!smiles) return
-    setLoading(true)
+    setLoading(true); setChemError('')
     try {
       const res = await fetch('/api/chem/docking-prep', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ smiles }) })
       const d = await res.json()
       if (d.ready_for_docking) {
         setDockingPrep(d)
         setSuggestions(prev => [{ text: `✓ Docking ready: ${d.n_atoms} atoms, charge ${d.charge}, ${d.n_rotatable} rotatable bonds`, type: 'good' }, ...prev.slice(0, 4)])
-      }
-    } catch { /* no-op */ }
+      } else setChemError(d.detail || 'Docking prep failed')
+    } catch { setChemError('Backend unavailable for Docking Prep') }
     setLoading(false)
   }
 
@@ -433,7 +464,8 @@ export function LigandDesigner() {
       const res = await fetch('/api/chem/to-smarts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ smiles }) })
       const d = await res.json()
       if (d.smarts) downloadFile(d.smarts, `${molName || 'molecule'}.smarts`, 'text/plain')
-    } catch { /* no-op */ }
+      else setChemError(d.detail || 'SMARTS conversion failed')
+    } catch { setChemError('Backend unavailable for SMARTS export') }
   }
 
   const copySmiles = () => { if (smiles) navigator.clipboard.writeText(smiles) }
@@ -591,7 +623,7 @@ export function LigandDesigner() {
               className="w-full px-2 py-1 text-xs font-mono border border-gray-300 rounded resize-none bg-gray-50 focus:ring-1 focus:ring-cyan-400 outline-none"
               rows={3} placeholder="Paste SMILES here…" />
             <div className="flex gap-1 mt-1">
-              <button onClick={() => { triggerCoreAnalysis(smiles); saveToRecent(molName, smiles) }}
+              <button onClick={() => { triggerCoreAnalysis(smiles, true); saveToRecent(molName, smiles) }}
                 className="flex-1 px-2 py-1 text-xs bg-cyan-600 hover:bg-cyan-700 text-white rounded">Analyze</button>
               <button onClick={() => loadIntoKetcher('')} className="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded text-gray-600">Clear</button>
             </div>
@@ -894,11 +926,11 @@ export function LigandDesigner() {
                 <div className="p-3">
                   <div className="text-xs font-semibold text-gray-700 mb-2">Identifiers</div>
                   <div className="space-y-1">
-                    <button onClick={fetchIUPAC} className="w-full text-left text-xs text-blue-600 hover:underline truncate">
-                      {iupacName ? `IUPAC: ${iupacName}` : 'Get IUPAC Name →'}
+                    <button onClick={fetchIUPAC} disabled={iupacLoading} className="w-full text-left text-xs text-blue-600 hover:underline truncate disabled:opacity-50">
+                      {iupacLoading ? 'Fetching…' : iupacName ? `IUPAC: ${iupacName}` : 'Get IUPAC Name →'}
                     </button>
-                    <button onClick={fetchInChI} className="w-full text-left text-xs text-blue-600 hover:underline truncate">
-                      {inchiKey ? `InChIKey: ${inchiKey}` : 'Get InChI / InChIKey →'}
+                    <button onClick={fetchInChI} disabled={inchiLoading} className="w-full text-left text-xs text-blue-600 hover:underline truncate disabled:opacity-50">
+                      {inchiLoading ? 'Fetching…' : inchiKey ? `InChIKey: ${inchiKey}` : 'Get InChI / InChIKey →'}
                     </button>
                   </div>
                 </div>
@@ -955,7 +987,7 @@ export function LigandDesigner() {
                 <div className="border-b border-gray-200">
                   <div className="flex items-center justify-between px-3 py-2 bg-gray-50">
                     <span className="text-xs font-semibold text-gray-700">🔬 Synthetic Accessibility</span>
-                    <button onClick={fetchSAScore} className="text-xs text-cyan-600 hover:underline">Calculate</button>
+                    <button onClick={fetchSAScore} disabled={saLoading} className="text-xs text-cyan-600 hover:underline disabled:opacity-50">{saLoading ? 'Calculating…' : 'Calculate'}</button>
                   </div>
                   <div className="p-3">
                     {saScore == null ? (
@@ -978,7 +1010,7 @@ export function LigandDesigner() {
                 <div className="border-b border-gray-200">
                   <div className="flex items-center justify-between px-3 py-2 bg-gray-50">
                     <span className="text-xs font-semibold text-gray-700">🔗 Murcko Scaffold</span>
-                    <button onClick={fetchScaffold} className="text-xs text-cyan-600 hover:underline">Extract</button>
+                    <button onClick={fetchScaffold} disabled={scaffoldLoading} className="text-xs text-cyan-600 hover:underline disabled:opacity-50">{scaffoldLoading ? 'Extracting…' : 'Extract'}</button>
                   </div>
                   {scaffold && (
                     <div className="p-3">
@@ -992,7 +1024,7 @@ export function LigandDesigner() {
                 <div className="border-b border-gray-200">
                   <div className="flex items-center justify-between px-3 py-2 bg-gray-50">
                     <span className="text-xs font-semibold text-gray-700">📈 Estimated NMR</span>
-                    <button onClick={fetchNMR} className="text-xs text-cyan-600 hover:underline">Predict</button>
+                    <button onClick={fetchNMR} disabled={nmrLoading} className="text-xs text-cyan-600 hover:underline disabled:opacity-50">{nmrLoading ? 'Predicting…' : 'Predict'}</button>
                   </div>
                   {nmrData.length > 0 && (
                     <div className="p-3">
@@ -1013,7 +1045,7 @@ export function LigandDesigner() {
                 <div>
                   <div className="flex items-center justify-between px-3 py-2 bg-gray-50">
                     <span className="text-xs font-semibold text-gray-700">✂ Scaffold Disconnections</span>
-                    <button onClick={fetchScaffoldCuts} className="text-xs text-cyan-600 hover:underline">Analyse</button>
+                    <button onClick={fetchScaffoldCuts} disabled={cutsLoading} className="text-xs text-cyan-600 hover:underline disabled:opacity-50">{cutsLoading ? 'Analysing…' : 'Analyse'}</button>
                   </div>
                   {scaffoldCuts.length > 0 && (
                     <div className="p-3">
