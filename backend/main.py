@@ -1173,16 +1173,26 @@ def api_docking_run(req: DockingRunRequest):
                 "download_urls": docking_result.get("download_urls", {}),
                 "message": f"Docking complete - {len(results)} poses generated",
             }
+
+            # Store full_payload FIRST, then set status to completed (prevents race condition)
+            with DockingProgress._lock:
+                DockingProgress._jobs[job_id]["full_payload"] = full_payload
+
+            download_urls = docking_result.get("download_urls", {})
+            logger.info(
+                f"[Docking] Job {job_id} complete: {len(results)} poses, "
+                f"download_urls keys={list(download_urls.keys())}, "
+                f"files keys={list(docking_result.get('files', {}).keys())}"
+            )
+
             DockingProgress.set_status(
                 job_id,
                 "completed",
                 f"Done - {len(results)} poses, best {best_score:.2f} kcal/mol",
                 results=results,
                 files=docking_result.get("files", {}),
-                download_urls=docking_result.get("download_urls", {}),
+                download_urls=download_urls,
             )
-            with DockingProgress._lock:
-                DockingProgress._jobs[job_id]["full_payload"] = full_payload
 
         except Exception as e:
             logger.error(f"[Docking] Background error: {e}")
@@ -1206,7 +1216,9 @@ def api_docking_result(job_id: str):
     """
     progress = DockingProgress.get_progress(job_id)
     if progress.get("status") == "completed" and "full_payload" in progress:
-        return progress["full_payload"]
+        fp = progress["full_payload"]
+        logger.info(f"[Result] Job {job_id}: returning full_payload, download_urls keys={list(fp.get('download_urls', {}).keys())}")
+        return fp
     if progress.get("status") == "failed":
         return {
             "job_id": job_id,
@@ -1215,6 +1227,7 @@ def api_docking_result(job_id: str):
         }
 
     # In-memory miss — try DB
+    logger.info(f"[Result] Job {job_id}: in-memory miss, falling back to DB")
     row = get_job_full(job_id)
     if row and row.get("status") == "completed":
         files = {}
@@ -1276,12 +1289,16 @@ def _files_to_download_urls(files: dict) -> dict:
     for raw_key, path in (files or {}).items():
         url = _safe_download_url(path)
         if not url:
+            logger.debug(f"[Download] Skipping {raw_key}: path={path}")
             continue
         fname = os.path.basename(path)
-        # Validate against current STORAGE_DIR, not stale absolute path
-        if os.path.exists(os.path.join(STORAGE_DIR, fname)):
+        exists = os.path.exists(os.path.join(STORAGE_DIR, fname))
+        if exists:
             mapped_key = key_map.get(raw_key, raw_key)
             urls[mapped_key] = url
+        else:
+            logger.debug(f"[Download] File not found: {fname} (from {raw_key}={path})")
+    logger.info(f"[Download] files={list((files or {}).keys())} → urls={list(urls.keys())}")
     return urls
 
 

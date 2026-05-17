@@ -385,6 +385,13 @@ END`
         if (status.status === 'completed') {
           const resultRes = await fetch(`/api/docking/result/${jobId}`)
           data = await resultRes.json()
+          console.log('[Docking] Result received:', {
+            job_id: data.job_id,
+            engine: data.engine,
+            results_count: data.results?.length,
+            download_urls: data.download_urls,
+            files: data.files,
+          })
           break
         }
         if (status.status === 'failed') {
@@ -433,6 +440,12 @@ END`
         const res = await fetch(`/api/jobs/${job.job_id}/full`)
         if (res.ok) {
           const data = await res.json()
+          console.log('[Docking] Job history restored:', {
+            job_id: data.job_id,
+            results_count: data.results?.length,
+            download_urls: data.download_urls,
+            files: data.files,
+          })
           setSelectedJob({
             job_id: data.job_id,
             job_name: data.job_name || job.job_name,
@@ -984,7 +997,14 @@ END`
   )
 
   // === RENDER: RESULTS STAGE ===
-  const renderResultsStage = () => (
+  const renderResultsStage = () => {
+    console.log('[Docking] Render results stage:', {
+      has_job: !!selectedJob,
+      download_urls: selectedJob?.download_urls,
+      results_count: selectedJob?.results?.length,
+      engine: selectedJob?.engine,
+    })
+    return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header */}
       <div className={`px-6 py-3 flex items-center gap-4 ${isDark ? 'bg-gray-800 border-b border-gray-700' : 'bg-white border-b border-gray-200'}`}>
