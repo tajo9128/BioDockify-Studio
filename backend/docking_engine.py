@@ -2382,7 +2382,8 @@ def batch_dock(
 
         with vina_lock:
             progress["vina_done"] += 1
-            _report()
+
+        _report()
 
     logger.info(
         f"[BatchDock] Starting Vina docking for {total} ligands ({max_vina_workers} workers)"
@@ -2442,9 +2443,13 @@ def batch_dock(
                 return
 
             try:
+                ligand_pdbqt_path = lig.get("ligand_pdbqt_path")
+                if not ligand_pdbqt_path:
+                    raise ValueError("Missing ligand PDBQT path for GNINA")
+
                 result = run_gnina_docking(
                     receptor_pdbqt=receptor_pdbqt,
-                    ligand_pdbqt=lig.get("ligand_pdbqt_path"),
+                    ligand_pdbqt=ligand_pdbqt_path,
                     center_x=grid_config.get("center_x", 0),
                     center_y=grid_config.get("center_y", 0),
                     center_z=grid_config.get("center_z", 0),
@@ -2484,7 +2489,8 @@ def batch_dock(
 
             with gnina_lock:
                 progress["gnina_done"] += 1
-                _report()
+
+            _report()
 
         logger.info(
             f"[BatchDock] Starting GNINA for {len(selected_for_gnina)} ligands ({max_gnina_workers} workers)"

@@ -70,9 +70,16 @@ export function BatchDocking() {
     if (smilesList.length === 0) { setError('Please enter at least one SMILES'); return }
     if (smilesList.length > 100) { setError('Maximum 100 ligands per batch'); return }
 
+    // Clear any existing poll interval (prevents double-start race)
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+
     setError('')
     setStage('running')
     setResults(null)
+    setProgress(null)
 
     try {
       const { job_id } = await batchDockingAPI.start({
@@ -86,17 +93,42 @@ export function BatchDocking() {
 
       // Poll progress
       pollRef.current = window.setInterval(async () => {
-        const p = await batchDockingAPI.getProgress(job_id)
-        setProgress(p)
+        try {
+          const p = await batchDockingAPI.getProgress(job_id)
+          setProgress(p)
 
-        if (p.status === 'completed') {
+          if (p.status === 'completed') {
+            if (pollRef.current) clearInterval(pollRef.current)
+            pollRef.current = null
+            try {
+              const r = await batchDockingAPI.getResults(job_id)
+              if (r.status === 'completed') {
+                setResults(r)
+                setStage('results')
+              } else {
+                setError(r.message || 'Results not yet available')
+                setStage('input')
+              }
+            } catch (e: any) {
+              setError(`Failed to fetch results: ${e.message || 'Unknown error'}`)
+              setStage('input')
+            }
+          } else if (p.status === 'failed') {
+            if (pollRef.current) clearInterval(pollRef.current)
+            pollRef.current = null
+            setError(p.message || 'Batch docking failed')
+            setStage('input')
+          } else if (p.status === 'cancelled') {
+            if (pollRef.current) clearInterval(pollRef.current)
+            pollRef.current = null
+            setError('Batch docking cancelled')
+            setStage('input')
+          }
+        } catch (e: any) {
+          // Polling error (network, 404, etc.) — stop polling and show error
           if (pollRef.current) clearInterval(pollRef.current)
-          const r = await batchDockingAPI.getResults(job_id)
-          setResults(r)
-          setStage('results')
-        } else if (p.status === 'failed') {
-          if (pollRef.current) clearInterval(pollRef.current)
-          setError('Batch docking failed')
+          pollRef.current = null
+          setError(`Polling error: ${e.message || 'Connection lost'}`)
           setStage('input')
         }
       }, 2000)
@@ -106,8 +138,19 @@ export function BatchDocking() {
     }
   }
 
-  const handleCancel = () => {
-    if (pollRef.current) clearInterval(pollRef.current)
+  const handleCancel = async () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+    // Cancel on backend
+    if (jobId) {
+      try {
+        await batchDockingAPI.cancel(jobId)
+      } catch {
+        // Ignore cancel errors (job may already be finished)
+      }
+    }
     setStage('input')
     setJobId('')
     setProgress(null)
@@ -360,7 +403,7 @@ export function BatchDocking() {
             </p>
           </div>
           <button
-            onClick={() => { setStage('input'); setResults(null); setProgress(null) }}
+            onClick={() => { setStage('input'); setResults(null); setProgress(null); setError(''); setShowAll(false) }}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm"
           >
             + New Batch

@@ -3966,6 +3966,7 @@ class BatchDockingRequest(BaseModel):
 
 # In-memory batch job store
 BATCH_JOBS: Dict[str, Dict[str, Any]] = {}
+BATCH_CANCEL_EVENTS: Dict[str, threading.Event] = {}
 
 
 @app.post("/batch/docking")
@@ -3999,6 +4000,7 @@ def batch_docking(request: BatchDockingRequest, bg_tasks: BackgroundTasks):
         "errors_detail": [],
         "created_at": datetime.now().isoformat(),
     }
+    BATCH_CANCEL_EVENTS[job_id] = threading.Event()
 
     bg_tasks.add_task(_run_batch_docking, job_id, request)
 
@@ -4011,23 +4013,28 @@ def batch_docking(request: BatchDockingRequest, bg_tasks: BackgroundTasks):
 
 
 def _run_batch_docking(job_id: str, request: BatchDockingRequest):
-    """Run batch docking in background thread."""
+    """Run batch docking in background thread with proper cancellation support."""
     from docking_engine import batch_dock
+    import shutil
 
+    cancel_event = BATCH_CANCEL_EVENTS.get(job_id)
     job = BATCH_JOBS.get(job_id)
-    if not job:
+    if not job or not cancel_event:
         return
 
     job["status"] = "running"
     job["stage"] = "starting"
 
     def _progress_cb(progress: Dict):
+        # Don't overwrite cancelled status
+        if cancel_event.is_set():
+            return
         if job:
             job.update(progress)
-            job["status"] = "running"
             if progress.get("stage") == "completed":
                 job["status"] = "completed"
 
+    output_dir = None
     try:
         import tempfile
 
@@ -4052,6 +4059,11 @@ def _run_batch_docking(job_id: str, request: BatchDockingRequest):
             progress_callback=_progress_cb,
         )
 
+        if cancel_event.is_set():
+            job["status"] = "cancelled"
+            job["stage"] = "cancelled"
+            return
+
         if result.get("success"):
             job["status"] = "completed"
             job["stage"] = "completed"
@@ -4064,6 +4076,7 @@ def _run_batch_docking(job_id: str, request: BatchDockingRequest):
             job["filter_threshold"] = result.get("filter_threshold", -7.0)
             job["filter_top_n"] = result.get("filter_top_n", 20)
             job["mode"] = result.get("mode", "accurate")
+            job["progress_percent"] = 100
         else:
             job["status"] = "failed"
             job["stage"] = "failed"
@@ -4076,6 +4089,16 @@ def _run_batch_docking(job_id: str, request: BatchDockingRequest):
         job["error"] = str(e)
         job["errors_detail"] = [{"smiles": "", "error": str(e)}]
         logger.exception(f"Batch docking job {job_id} failed")
+    finally:
+        # Clean up temp directory
+        if output_dir and os.path.exists(output_dir):
+            try:
+                shutil.rmtree(output_dir)
+                logger.info(f"[BatchDock] Cleaned up temp dir: {output_dir}")
+            except Exception as e:
+                logger.warning(f"[BatchDock] Failed to clean temp dir {output_dir}: {e}")
+        # Clean up cancel event
+        BATCH_CANCEL_EVENTS.pop(job_id, None)
 
 
 @app.get("/batch/docking/{job_id}/progress")
@@ -4153,6 +4176,11 @@ def batch_docking_cancel(job_id: str):
     if job.get("status") in ("completed", "failed"):
         return {"message": "Job already finished"}
     job["status"] = "cancelled"
+    job["stage"] = "cancelled"
+    # Signal the background thread to stop
+    cancel_event = BATCH_CANCEL_EVENTS.get(job_id)
+    if cancel_event:
+        cancel_event.set()
     return {"message": "Job cancelled"}
 
 
