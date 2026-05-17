@@ -878,6 +878,56 @@ def get_feature_visualization(feature_type: str):
     }
 
 
+class HypothesisRequest(BaseModel):
+    active_smiles: List[str]
+    min_features: int = 3
+    max_features: int = 6
+
+
+class ExclusionVolumeRequest(BaseModel):
+    receptor_pdb: str
+    ligand_center: Optional[List[float]] = None
+    cutoff: float = 5.0
+
+
+@app.post("/pharmacophore/hypothesis")
+def generate_hypothesis(request: HypothesisRequest):
+    """
+    Generate pharmacophore hypothesis from multiple active ligands.
+    """
+    try:
+        from pharmacophore import get_engine
+        engine = get_engine()
+        result = engine.generate_hypothesis(
+            request.active_smiles,
+            min_features=request.min_features,
+            max_features=request.max_features
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Hypothesis generation error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/pharmacophore/exclusion-volumes")
+def generate_exclusion_volumes(request: ExclusionVolumeRequest):
+    """
+    Generate exclusion volume spheres from receptor structure.
+    """
+    try:
+        from pharmacophore import get_engine
+        engine = get_engine()
+        result = engine.generate_exclusion_volumes(
+            request.receptor_pdb,
+            ligand_center=request.ligand_center,
+            cutoff=request.cutoff
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Exclusion volume generation error: {e}")
+        return {"success": False, "error": str(e)}
+
+
 class InteractionDiagramRequest(BaseModel):
     receptor_path: str
     ligand_smiles: Optional[str] = None

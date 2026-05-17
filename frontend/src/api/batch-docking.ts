@@ -26,6 +26,7 @@ export interface BatchDockingProgress {
   total_ligands: number
   errors: number
   progress_percent: number
+  message?: string
 }
 
 export interface BatchDockingResult {
@@ -42,6 +43,7 @@ export interface BatchDockingResult {
   mode?: string
   filter_threshold?: number
   filter_top_n?: number
+  message?: string
 }
 
 export const batchDockingAPI = {

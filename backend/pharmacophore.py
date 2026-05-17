@@ -351,7 +351,6 @@ class PharmacophoreEngine:
         try:
             from rdkit import Chem
             from rdkit.Chem import AllChem
-            from rdkit.Chem.FeatMaps import FeatMapParser, FeatMap
             
             # Generate pharmacophore for mobile
             mobile_result = self.generate_from_smiles(mobile_smiles)
@@ -436,7 +435,8 @@ class PharmacophoreEngine:
         Finds common features across all active molecules.
         """
         try:
-            from rdkit.Chem import AllChem, rdMolAlign
+            from rdkit import Chem
+            from rdkit.Chem import AllChem
             import numpy as np
 
             all_features = []
@@ -463,7 +463,7 @@ class PharmacophoreEngine:
             for ftype in feature_types:
                 positions_by_mol = []
                 for entry in all_features:
-                    type_feats = [f for f in entry['features'] if f['family'] == ftype]
+                    type_feats = [f for f in entry['features'] if f.feature_family == ftype]
                     if type_feats:
                         positions_by_mol.append(type_feats)
 
@@ -471,7 +471,7 @@ class PharmacophoreEngine:
                     all_positions = []
                     for feats in positions_by_mol:
                         for f in feats:
-                            all_positions.append(f['position'])
+                            all_positions.append(f.position)
 
                     if all_positions:
                         positions_arr = np.array(all_positions)

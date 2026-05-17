@@ -18,15 +18,17 @@ interface PharmacophoreViewerProps {
   className?: string
 }
 
-// Feature colors matching backend
+// Feature colors matching backend (RDKit feature factory names)
 const FEATURE_COLORS: Record<string, string> = {
   'Donor': '#4169E1',
   'Acceptor': '#DC143C',
   'Hydrophobic': '#FFD700',
+  'Hydrophobe': '#FFD700',
+  'LumpedHydrophobic': '#DAA520',
+  'LumpedHydrophobe': '#DAA520',
   'Aromatic': '#9932CC',
   'PosIonizable': '#32CD32',
   'NegIonizable': '#FF8C00',
-  'LumpedHydrophobic': '#DAA520',
 }
 
 export function PharmacophoreViewer3D({ 

@@ -146,9 +146,9 @@ export function LigandDesigner() {
   const [scaffoldLoading, setScaffoldLoading] = useState(false)
   const [nmrLoading, setNmrLoading] = useState(false)
   const [cutsLoading, setCutsLoading] = useState(false)
-  const [simLoading, setSimLoading] = useState(false)
   const [iupacLoading, setIupacLoading] = useState(false)
   const [inchiLoading, setInchiLoading] = useState(false)
+
 
   // ─── Caching helpers ──────────────────────────────────────────────────────
   const getCached = (smi: string) => smilesCache.current[smi] || null

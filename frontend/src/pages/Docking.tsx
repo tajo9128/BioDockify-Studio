@@ -1247,6 +1247,7 @@ END`
       </div>
     </div>
   )
+  }
 
   return (
     <div className={`h-full flex flex-col ${isDark ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
