@@ -141,6 +141,7 @@ export function LigandDesigner() {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState('')
   const [showAiPanel, setShowAiPanel] = useState(false)
+  const [chemError, setChemError] = useState('')
 
   // ─── Caching helpers ──────────────────────────────────────────────────────
   const getCached = (smi: string) => smilesCache.current[smi] || null
@@ -203,8 +204,9 @@ export function LigandDesigner() {
       }
 
       setCached(smi, result)
-    } catch {
-      // network error — keep existing state
+      setChemError('')
+    } catch (e: any) {
+      setChemError(`Backend unavailable (port 8000). Start the server: python -m uvicorn backend.main:app --port 8000`)
     }
   }, [])
 
@@ -825,6 +827,12 @@ export function LigandDesigner() {
             {/* ─ PROPERTIES TAB ─ */}
             {activeRightTab === 'properties' && (
               <div>
+                {chemError && (
+                  <div className="p-3 border-b border-red-200 bg-red-50">
+                    <div className="text-xs font-semibold text-red-700 mb-1">⚠ Analysis Error</div>
+                    <p className="text-xs text-red-600">{chemError}</p>
+                  </div>
+                )}
                 {/* Color-coded properties */}
                 <div className="p-3 border-b border-gray-200">
                   <div className="text-xs font-semibold text-gray-700 mb-2">Molecular Properties</div>
