@@ -147,3 +147,14 @@ export async function getMDHealth(): Promise<{ status: string; engine: string }>
   const { data } = await apiClient.get('/md/health')
   return data
 }
+
+export async function getMDGPUStatus(): Promise<{
+  gpu_available: boolean
+  gpu_platforms: any[]
+  all_platforms: string[]
+  recommended_platform: string
+  message: string
+}> {
+  const { data } = await apiClient.get('/md/gpu/status')
+  return data
+}

@@ -108,33 +108,9 @@ async def upload_page():
 @app.on_event("startup")
 async def startup_event():
     """Print startup information when server starts"""
-    print("")
-    print("=" * 60)
-    print("  🧬 Docking Studio - Backend Started")
-    print("=" * 60)
-    print("")
-    print("  📚 API Documentation (Swagger UI):")
-    print("     ➤ http://localhost:8000/docs")
-    print("")
-    print("  📖 Alternative API Docs (ReDoc):")
-    print("     ➤ http://localhost:8000/redoc")
-    print("")
-    print("  ✅ Health Check:")
-    print("     ➤ http://localhost:8000/health")
-    print("")
-    print("  🔐 Security Status:")
-    print("     ➤ http://localhost:8000/security/status")
-    print("")
-    print("  🤖 Ollama AI (if enabled):")
-    print("     ➤ http://localhost:11434")
-    print("")
-    print("=" * 60)
-    print("  🎯 Quick Start for Students:")
-    print("     1. Open http://localhost:8000/docs in browser")
-    print("     2. Read the API documentation")
-    print("     3. Try the /dock endpoints")
-    print("=" * 60)
-    print("")
+    logger.info("Docking Studio - Backend Started")
+    logger.info("API Documentation: http://localhost:8000/docs")
+    logger.info("Health Check: http://localhost:8000/health")
 
 
 class PoseRequest(BaseModel):
@@ -900,6 +876,372 @@ def get_feature_visualization(feature_type: str):
             "alpha": 0.5
         }
     }
+
+
+class InteractionDiagramRequest(BaseModel):
+    receptor_path: str
+    ligand_smiles: Optional[str] = None
+    ligand_path: Optional[str] = None
+    cutoff: float = 5.0
+
+
+@app.post("/api/interactions/2d-diagram")
+def generate_2d_interaction_diagram(req: InteractionDiagramRequest):
+    """
+    Generate 2D ligand interaction diagram (Discovery Studio style).
+    
+    Returns structured JSON with:
+    - Ligand 2D atom positions and bonds
+    - Interaction annotations (H-bonds, hydrophobic, pi-stacking, salt bridges)
+    - Residue labels with positions
+    """
+    logger.info(f"2D interaction diagram requested for ligand: {req.ligand_smiles or req.ligand_path}")
+    
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import AllChem, Draw
+        import numpy as np
+        
+        # Load ligand
+        ligand_mol = None
+        if req.ligand_smiles:
+            ligand_mol = Chem.MolFromSmiles(req.ligand_smiles)
+            if ligand_mol:
+                ligand_mol = Chem.AddHs(ligand_mol)
+                AllChem.EmbedMolecule(ligand_mol, randomSeed=42)
+        elif req.ligand_path:
+            ligand_mol = Chem.MolFromMolFile(req.ligand_path, removeHs=False)
+            if not ligand_mol:
+                ligand_mol = Chem.MolFromPDBFile(req.ligand_path, removeHs=False)
+        
+        if not ligand_mol:
+            raise HTTPException(status_code=400, detail="Could not load ligand molecule")
+        
+        # Generate 2D coordinates
+        AllChem.Compute2DCoords(ligand_mol)
+        conf = ligand_mol.GetConformer()
+        
+        # Build 2D atom data
+        atoms_2d = []
+        for atom in ligand_mol.GetAtoms():
+            pos = conf.GetAtomPosition(atom.GetIdx())
+            atoms_2d.append({
+                "idx": atom.GetIdx(),
+                "symbol": atom.GetSymbol(),
+                "x": float(pos.x),
+                "y": float(pos.y),
+                "charge": atom.GetFormalCharge(),
+                "is_aromatic": atom.GetIsAromatic(),
+            })
+        
+        # Build bond data
+        bonds_2d = []
+        for bond in ligand_mol.GetBonds():
+            bonds_2d.append({
+                "from": bond.GetBeginAtomIdx(),
+                "to": bond.GetEndAtomIdx(),
+                "order": int(bond.GetBondType()),
+                "is_aromatic": bond.GetIsAromatic(),
+            })
+        
+        # Detect interactions with receptor
+        interactions = []
+        residues_seen = {}
+        
+        if os.path.exists(req.receptor_path):
+            from Bio.PDB.PDBParser import PDBParser
+            
+            parser = PDBParser(QUIET=True)
+            receptor = parser.get_structure("receptor", req.receptor_path)
+            
+            # Get ligand 3D coords for distance calculation
+            ligand_3d_coords = []
+            if req.ligand_path and os.path.exists(req.ligand_path):
+                try:
+                    ligand_3d = parser.get_structure("ligand", req.ligand_path)
+                    for atom in ligand_3d.get_atoms():
+                        ligand_3d_coords.append(atom.get_coord())
+                except:
+                    pass
+            
+            if not ligand_3d_coords and ligand_mol:
+                # Generate 3D coords if not available
+                temp_mol = Chem.Mol(ligand_mol)
+                AllChem.EmbedMolecule(temp_mol, randomSeed=42)
+                temp_conf = temp_mol.GetConformer()
+                for i in range(temp_mol.GetNumAtoms()):
+                    pos = temp_conf.GetAtomPosition(i)
+                    ligand_3d_coords.append(np.array([pos.x, pos.y, pos.z]))
+            
+            if ligand_3d_coords:
+                ligand_array = np.array(ligand_3d_coords)
+                
+                for residue in receptor.get_residues():
+                    res_id = f"{residue.resname}_{residue.id[1]}_{residue.parent.id if residue.parent else 'A'}"
+                    
+                    for res_atom in residue.get_atoms():
+                        res_coord = res_atom.get_coord()
+                        
+                        for lig_idx, lig_coord in enumerate(ligand_3d_coords):
+                            dist = np.linalg.norm(res_coord - lig_coord)
+                            
+                            if dist < req.cutoff:
+                                interaction_type = None
+                                
+                                # H-bond detection (donor/acceptor)
+                                if res_atom.element in ['N', 'O'] and ligand_mol.GetAtomWithIdx(lig_idx).GetSymbol() in ['N', 'O']:
+                                    if dist < 3.5:
+                                        interaction_type = "hbond"
+                                
+                                # Hydrophobic contact
+                                elif res_atom.element in ['C'] and ligand_mol.GetAtomWithIdx(lig_idx).GetSymbol() in ['C', 'S']:
+                                    if dist < 4.5:
+                                        interaction_type = "hydrophobic"
+                                
+                                # Pi-stacking (aromatic residues)
+                                if res_atom.element in ['C', 'N'] and ligand_mol.GetAtomWithIdx(lig_idx).GetIsAromatic():
+                                    if residue.resname in ['PHE', 'TYR', 'TRP', 'HIS']:
+                                        if 3.5 < dist < 5.5:
+                                            interaction_type = "pi_stacking"
+                                
+                                # Salt bridge
+                                if res_atom.element == 'N' and residue.resname in ['ARG', 'LYS', 'HIS']:
+                                    if ligand_mol.GetAtomWithIdx(lig_idx).GetSymbol() in ['O', 'N'] and dist < 4.0:
+                                        interaction_type = "salt_bridge"
+                                elif res_atom.element == 'O' and residue.resname in ['ASP', 'GLU']:
+                                    if ligand_mol.GetAtomWithIdx(lig_idx).GetSymbol() in ['N', 'O'] and dist < 4.0:
+                                        interaction_type = "salt_bridge"
+                                
+                                if interaction_type:
+                                    # Map 3D ligand atom to 2D index
+                                    ligand_2d_idx = lig_idx % len(atoms_2d)
+                                    
+                                    if res_id not in residues_seen:
+                                        residues_seen[res_id] = {
+                                            "name": residue.resname,
+                                            "number": residue.id[1],
+                                            "chain": residue.parent.id if residue.parent else 'A',
+                                            "interactions": []
+                                        }
+                                    
+                                    residues_seen[res_id]["interactions"].append({
+                                        "type": interaction_type,
+                                        "ligand_atom_idx": ligand_2d_idx,
+                                        "distance": round(float(dist), 2),
+                                        "residue_atom": res_atom.name,
+                                    })
+        
+        # Build interaction list for frontend
+        interaction_list = []
+        for res_id, res_data in residues_seen.items():
+            label = f"{res_data['name']} {res_data['number']}{res_data['chain']}"
+            
+            for interaction in res_data["interactions"]:
+                interaction_list.append({
+                    "type": interaction["type"],
+                    "residue_label": label,
+                    "residue_name": res_data["name"],
+                    "residue_number": res_data["number"],
+                    "chain": res_data["chain"],
+                    "ligand_atom_idx": interaction["ligand_atom_idx"],
+                    "distance": interaction["distance"],
+                    "residue_atom": interaction["residue_atom"],
+                })
+        
+        # Calculate bounding box for 2D view
+        if atoms_2d:
+            x_coords = [a["x"] for a in atoms_2d]
+            y_coords = [a["y"] for a in atoms_2d]
+            x_min, x_max = min(x_coords), max(x_coords)
+            y_min, y_max = min(y_coords), max(y_coords)
+            x_center = (x_min + x_max) / 2
+            y_center = (y_min + y_max) / 2
+            scale = max(x_max - x_min, y_max - y_min) * 1.5
+        else:
+            x_center, y_center, scale = 0, 0, 10
+        
+        result = {
+            "success": True,
+            "ligand": {
+                "smiles": req.ligand_smiles or Chem.MolToSmiles(ligand_mol),
+                "num_atoms": len(atoms_2d),
+                "num_bonds": len(bonds_2d),
+                "atoms": atoms_2d,
+                "bonds": bonds_2d,
+            },
+            "interactions": interaction_list,
+            "residues": list(residues_seen.values()),
+            "view": {
+                "center_x": x_center,
+                "center_y": y_center,
+                "scale": scale,
+            },
+            "summary": {
+                "hbond_count": len([i for i in interaction_list if i["type"] == "hbond"]),
+                "hydrophobic_count": len([i for i in interaction_list if i["type"] == "hydrophobic"]),
+                "pi_stacking_count": len([i for i in interaction_list if i["type"] == "pi_stacking"]),
+                "salt_bridge_count": len([i for i in interaction_list if i["type"] == "salt_bridge"]),
+                "total_count": len(interaction_list),
+            }
+        }
+        
+        logger.info(f"2D diagram generated: {len(interaction_list)} interactions detected")
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"2D interaction diagram generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class Interaction3DRequest(BaseModel):
+    receptor_path: str
+    ligand_path: str
+    cutoff: float = 5.0
+
+
+@app.post("/api/interactions/3d-data")
+def get_3d_interaction_data(req: Interaction3DRequest):
+    """
+    Get 3D interaction data for visualization in molecular viewer.
+    
+    Returns interaction lines, labels, and binding site residues with 3D coordinates.
+    """
+    logger.info(f"3D interaction data requested for receptor: {req.receptor_path}")
+    
+    try:
+        from Bio.PDB.PDBParser import PDBParser
+        import numpy as np
+        
+        if not os.path.exists(req.receptor_path):
+            raise HTTPException(status_code=404, detail=f"Receptor file not found: {req.receptor_path}")
+        
+        if not os.path.exists(req.ligand_path):
+            raise HTTPException(status_code=404, detail=f"Ligand file not found: {req.ligand_path}")
+        
+        parser = PDBParser(QUIET=True)
+        receptor = parser.get_structure("receptor", req.receptor_path)
+        ligand = parser.get_structure("ligand", req.ligand_path)
+        
+        ligand_atoms = []
+        for atom in ligand.get_atoms():
+            ligand_atoms.append({
+                "name": atom.name,
+                "element": atom.element,
+                "coord": atom.get_coord().tolist(),
+                "resname": atom.parent.resname if atom.parent else "UNK",
+                "resid": atom.parent.id[1] if atom.parent else 0,
+            })
+        
+        interactions = []
+        binding_site_residues = {}
+        
+        for residue in receptor.get_residues():
+            res_id_str = f"{residue.resname}_{residue.id[1]}_{residue.parent.id if residue.parent else 'A'}"
+            
+            for res_atom in residue.get_atoms():
+                res_coord = res_atom.get_coord()
+                
+                for lig_atom in ligand_atoms:
+                    lig_coord = np.array(lig_atom["coord"])
+                    dist = np.linalg.norm(res_coord - lig_coord)
+                    
+                    if dist < req.cutoff:
+                        interaction_type = None
+                        
+                        if res_atom.element in ['N', 'O'] and lig_atom["element"] in ['N', 'O']:
+                            if dist < 3.5:
+                                interaction_type = "hbond"
+                        
+                        if res_atom.element == 'C' and lig_atom["element"] in ['C', 'S']:
+                            if dist < 4.5:
+                                interaction_type = "hydrophobic"
+                        
+                        if res_atom.element in ['C', 'N'] and residue.resname in ['PHE', 'TYR', 'TRP', 'HIS']:
+                            if 3.5 < dist < 5.5:
+                                interaction_type = "pi_stacking"
+                        
+                        if res_atom.element == 'N' and residue.resname in ['ARG', 'LYS', 'HIS']:
+                            if lig_atom["element"] in ['O', 'N'] and dist < 4.0:
+                                interaction_type = "salt_bridge"
+                        elif res_atom.element == 'O' and residue.resname in ['ASP', 'GLU']:
+                            if lig_atom["element"] in ['N', 'O'] and dist < 4.0:
+                                interaction_type = "salt_bridge"
+                        
+                        if interaction_type:
+                            interactions.append({
+                                "type": interaction_type,
+                                "receptor_atom": {
+                                    "name": res_atom.name,
+                                    "element": res_atom.element,
+                                    "coord": res_coord.tolist(),
+                                    "residue": res_id_str,
+                                },
+                                "ligand_atom": {
+                                    "name": lig_atom["name"],
+                                    "element": lig_atom["element"],
+                                    "coord": lig_coord.tolist(),
+                                    "residue": f"{lig_atom['resname']} {lig_atom['resid']}",
+                                },
+                                "distance": round(float(dist), 2),
+                            })
+                            
+                            if res_id_str not in binding_site_residues:
+                                ca_atom = None
+                                for a in residue.get_atoms():
+                                    if a.name == 'CA':
+                                        ca_atom = a
+                                        break
+                                
+                                if ca_atom is None:
+                                    atoms_list = list(residue.get_atoms())
+                                    ca_atom = atoms_list[0] if atoms_list else None
+                                
+                                if ca_atom is not None:
+                                    binding_site_residues[res_id_str] = {
+                                        "name": residue.resname,
+                                        "number": residue.id[1],
+                                        "chain": residue.parent.id if residue.parent else 'A',
+                                        "coord": ca_atom.get_coord().tolist(),
+                                        "interactions": [],
+                                    }
+                            
+                            if res_id_str in binding_site_residues:
+                                binding_site_residues[res_id_str]["interactions"].append(interaction_type)
+        
+        ligand_coords = [a["coord"] for a in ligand_atoms]
+        if ligand_coords:
+            ligand_array = np.array(ligand_coords)
+            center = ligand_array.mean(axis=0).tolist()
+            radius = float(np.max(np.linalg.norm(ligand_array - center, axis=1))) + 5.0
+        else:
+            center = [0, 0, 0]
+            radius = 10.0
+        
+        result = {
+            "success": True,
+            "interactions": interactions,
+            "binding_site_residues": list(binding_site_residues.values()),
+            "ligand_center": center,
+            "ligand_radius": radius,
+            "summary": {
+                "hbond_count": len([i for i in interactions if i["type"] == "hbond"]),
+                "hydrophobic_count": len([i for i in interactions if i["type"] == "hydrophobic"]),
+                "pi_stacking_count": len([i for i in interactions if i["type"] == "pi_stacking"]),
+                "salt_bridge_count": len([i for i in interactions if i["type"] == "salt_bridge"]),
+                "total_count": len(interactions),
+            }
+        }
+        
+        logger.info(f"3D interaction data: {len(interactions)} interactions, {len(binding_site_residues)} residues")
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"3D interaction data generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/{path:path}")

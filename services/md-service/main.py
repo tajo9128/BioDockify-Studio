@@ -56,36 +56,104 @@ except Exception:
 
 notifications = NotificationManager()
 
+# VRAM thresholds (MB)
+VRAM_4GB = 4096
+VRAM_8GB = 8192
+VRAM_12GB = 12288
 
-def _get_best_platform():
-    """Get the best available OpenMM platform (GPU if available, else CPU)"""
+
+def _detect_gpu_vram():
+    """Detect available GPU VRAM in MB. Returns (vram_mb, platform_name) or (None, None)."""
     import openmm as mm
 
-    # Check for GPU platforms in order of preference
-    gpu_platforms = ["CUDA", "OpenCL", "HIP"]
-
-    for platform_name in gpu_platforms:
+    for platform_name in ["CUDA", "OpenCL", "HIP"]:
         try:
             platform = mm.Platform.getPlatformByName(platform_name)
-            # Verify platform works by checking it has at least one GPU
-            props = platform.getProperties()
             if platform_name == "CUDA":
-                if "CudaDeviceIndex" in props or "CudaPrecision" in props:
-                    logger.info(f"Using GPU platform: {platform_name}")
-                    return platform
+                import subprocess
+                try:
+                    result = subprocess.run(
+                        ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    if result.returncode == 0:
+                        lines = result.stdout.strip().split("\n")
+                        if lines:
+                            vram = int(lines[0].strip())
+                            logger.info(f"GPU detected: {platform_name}, VRAM: {vram} MB")
+                            return vram, platform_name
+                except (FileNotFoundError, subprocess.TimeoutExpired):
+                    pass
             elif platform_name == "OpenCL":
-                if "OpenCLDeviceIndex" in props or "OpenCLPlatformIndex" in props:
-                    logger.info(f"Using GPU platform: {platform_name}")
-                    return platform
-            elif platform_name == "HIP":
-                if "HipDeviceIndex" in props:
-                    logger.info(f"Using GPU platform: {platform_name}")
-                    return platform
+                try:
+                    import pyopencl as cl
+                    for plat in cl.get_platforms():
+                        for device in plat.get_devices(device_type=cl.device_type.GPU):
+                            vram = device.global_mem_size // (1024 * 1024)
+                            logger.info(f"GPU detected: {platform_name}, VRAM: {vram} MB")
+                            return vram, platform_name
+                except ImportError:
+                    pass
         except Exception:
             pass
 
-    logger.info("GPU not available, using CPU platform")
-    return mm.Platform.getPlatformByName("CPU")
+    logger.info("No GPU detected or VRAM detection failed")
+    return None, None
+
+
+def _get_best_platform(vram_mb=None, force_cpu=False):
+    """Get the best available OpenMM platform with VRAM-aware configuration.
+
+    Returns (platform, platform_properties_dict, use_cpu_fallback).
+    For GPUs with < 8GB VRAM, uses mixed precision and reduced memory settings.
+    """
+    import openmm as mm
+
+    if force_cpu:
+        logger.info("CPU forced, using CPU platform")
+        return mm.Platform.getPlatformByName("CPU"), {}, True
+
+    if vram_mb is None:
+        vram_mb, platform_name = _detect_gpu_vram()
+
+    if vram_mb is None:
+        logger.info("GPU not available, using CPU platform")
+        return mm.Platform.getPlatformByName("CPU"), {}, True
+
+    platform_props = {}
+
+    if vram_mb < VRAM_4GB:
+        logger.warning(f"GPU VRAM {vram_mb}MB is below minimum (4GB). Falling back to CPU.")
+        return mm.Platform.getPlatformByName("CPU"), {}, True
+
+    if vram_mb < VRAM_8GB:
+        logger.info(f"GPU VRAM {vram_mb}MB detected — using mixed precision (4GB-class GPU)")
+        platform_props["CudaPrecision"] = "mixed"
+        platform_props["CudaUseStreams"] = "true"
+    elif vram_mb < VRAM_12GB:
+        logger.info(f"GPU VRAM {vram_mb}MB detected — using mixed precision (8GB-class GPU)")
+        platform_props["CudaPrecision"] = "mixed"
+    else:
+        logger.info(f"GPU VRAM {vram_mb}MB detected — using double precision (12GB+ GPU)")
+        platform_props["CudaPrecision"] = "double"
+
+    try:
+        platform = mm.Platform.getPlatformByName("CUDA")
+        logger.info(f"Using GPU platform: CUDA with props {platform_props}")
+        return platform, platform_props, False
+    except Exception:
+        pass
+
+    try:
+        platform = mm.Platform.getPlatformByName("OpenCL")
+        platform_props["OpenCLPrecision"] = "mixed" if vram_mb < VRAM_8GB else "single"
+        logger.info(f"Using GPU platform: OpenCL with props {platform_props}")
+        return platform, platform_props, False
+    except Exception:
+        pass
+
+    logger.info("GPU platforms failed, falling back to CPU")
+    return mm.Platform.getPlatformByName("CPU"), {}, True
 
 
 def _set_job_status(
@@ -206,12 +274,13 @@ def health():
 
 @app.get("/gpu/status")
 def gpu_status():
-    """Check GPU availability for MD simulations"""
+    """Check GPU availability for MD simulations with VRAM detection"""
     try:
         import openmm as mm
 
         available_platforms = []
         gpu_platforms = []
+        vram_mb, detected_platform = _detect_gpu_vram()
 
         for platform in mm.Platform.getPlatforms():
             name = platform.getName()
@@ -219,9 +288,8 @@ def gpu_status():
 
             if name in ["CUDA", "OpenCL", "HIP"]:
                 props = platform.getProperties()
-                gpu_info = {"name": name, "properties": props}
+                gpu_info = {"name": name, "properties": props, "vram_mb": vram_mb}
 
-                # Try to get device info
                 if name == "CUDA":
                     gpu_info["device_count"] = props.get("CudaDeviceIndex", "Unknown")
                 elif name == "OpenCL":
@@ -229,14 +297,29 @@ def gpu_status():
 
                 gpu_platforms.append(gpu_info)
 
+        gpu_available = len(gpu_platforms) > 0
+        platform_name = gpu_platforms[0]["name"] if gpu_platforms else "CPU"
+
+        if vram_mb and vram_mb < VRAM_4GB:
+            message = f"GPU VRAM {vram_mb}MB below minimum (4GB) — CPU fallback"
+            platform_name = "CPU"
+            gpu_available = False
+        elif vram_mb and vram_mb < VRAM_8GB:
+            message = f"GPU {vram_mb}MB — mixed precision mode (GTX 1650 class)"
+        elif vram_mb and vram_mb < VRAM_12GB:
+            message = f"GPU {vram_mb}MB — mixed precision mode (RTX 3060 8GB class)"
+        elif vram_mb:
+            message = f"GPU {vram_mb}MB — full precision (RTX 3060 12GB+ class)"
+        else:
+            message = "No GPU found, using CPU"
+
         return {
-            "gpu_available": len(gpu_platforms) > 0,
+            "gpu_available": gpu_available,
             "gpu_platforms": gpu_platforms,
             "all_platforms": available_platforms,
-            "recommended_platform": gpu_platforms[0]["name"]
-            if gpu_platforms
-            else "CPU",
-            "message": "GPU detected!" if gpu_platforms else "No GPU found, using CPU",
+            "recommended_platform": platform_name,
+            "vram_mb": vram_mb,
+            "message": message,
         }
     except Exception as e:
         return {"gpu_available": False, "error": str(e), "recommended_platform": "CPU"}
@@ -277,6 +360,31 @@ def run_dynamics(request: DynamicsRequest, background_tasks: BackgroundTasks):
     }
 
 
+def _compute_adaptive_box_size(pdb):
+    """Compute adaptive solvation box size based on protein dimensions.
+    Adds 1.0nm padding around the protein (minimum 2.5nm box for small peptides).
+    This prevents excessive solvation that would blow VRAM on small GPUs.
+    """
+    from openmm import unit
+    import numpy as np
+
+    positions = np.array([
+        list(pdb.positions[i].value_in_unit(unit.nanometer))
+        for i in range(len(pdb.positions))
+    ])
+
+    mins = positions.min(axis=0)
+    maxs = positions.max(axis=0)
+    protein_size = maxs - mins
+
+    padding = 1.0
+    box = protein_size + 2 * padding
+
+    box_size = max(box.max(), 2.5)
+
+    return box_size
+
+
 def _run_dynamics(job_id: str, request: DynamicsRequest):
     try:
         import openmm as mm
@@ -292,6 +400,15 @@ def _run_dynamics(job_id: str, request: DynamicsRequest):
             )
 
         pdb = app.PDBFile(StringIO(request.pdb_content))
+
+        platform, platform_props, use_cpu = _get_best_platform()
+
+        n_atoms = pdb.topology.getNumAtoms()
+        is_small_system = n_atoms < 500
+
+        _set_job_status(job_id, "running", progress=10,
+                        message=f"System: {n_atoms} atoms, Platform: {platform.getName()}{' (CPU)' if use_cpu else ''}")
+
         modeller = app.Modeller(pdb.topology, pdb.positions)
 
         water = {
@@ -304,10 +421,11 @@ def _run_dynamics(job_id: str, request: DynamicsRequest):
         _update_progress(job_id, 15, "Adding hydrogens...")
         modeller.addHydrogens(forcefield)
 
-        _update_progress(job_id, 25, "Solvating...")
+        _update_progress(job_id, 25, "Solvating (adaptive box)...")
+        box_size = _compute_adaptive_box_size(pdb)
         modeller.addSolvent(
             forcefield,
-            boxSize=mm.Vec3(3.0, 3.0, 3.0) * unit.nanometer,
+            boxSize=mm.Vec3(box_size, box_size, box_size) * unit.nanometer,
             model=request.solvent_model,
         )
 
@@ -320,9 +438,16 @@ def _run_dynamics(job_id: str, request: DynamicsRequest):
             )
 
         _update_progress(job_id, 45, "Creating OpenMM system...")
+
+        if is_small_system and use_cpu:
+            nonbonded_method = app.CutoffPeriodic
+            logger.info(f"Small system ({n_atoms} atoms) on CPU: using CutoffPeriodic for speed")
+        else:
+            nonbonded_method = app.PME
+
         system = forcefield.createSystem(
             modeller.topology,
-            nonbondedMethod=app.PME,
+            nonbondedMethod=nonbonded_method,
             nonbondedCutoff=1.0 * unit.nanometer,
             constraints=app.HBonds,
         )
@@ -339,8 +464,7 @@ def _run_dynamics(job_id: str, request: DynamicsRequest):
         )
         integrator.setConstraintTolerance(1e-5)
 
-        platform = _get_best_platform()
-        context = mm.Context(system, integrator, platform)
+        context = mm.Context(system, integrator, platform, platform_props)
         context.setPositions(modeller.positions)
 
         _update_progress(job_id, 55, "Energy minimizing...")
@@ -351,43 +475,48 @@ def _run_dynamics(job_id: str, request: DynamicsRequest):
         integrator.step(5000)
 
         _update_progress(job_id, 65, f"Production MD: {request.steps} steps...")
-        energies = []
-        frames = []
-        total_frames = request.steps // request.frame_interval
-
-        for i in range(0, request.steps, request.frame_interval):
-            integrator.step(request.frame_interval)
-            state = context.getState(getPositions=True, getEnergy=True)
-            frames.append(
-                state.getPositions(asNumpy=True).value_in_unit(unit.nanometer)
-            )
-            energies.append(
-                state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
-            )
-            pct = 65 + int(30 * (i // request.frame_interval) / max(total_frames, 1))
-            _update_progress(job_id, pct, f"Step {i}/{request.steps}")
-
-            if i % (request.frame_interval * 5) == 0 and request.notify_on_complete:
-                pct_total = int(65 + 30 * i / max(request.steps, 1))
-                notifications.notify_simulation_progress(
-                    job_id,
-                    pct_total,
-                    f"Step {i}/{request.steps} ({i * 0.002 / 1000:.1f}ns)",
-                )
-
-        _update_progress(job_id, 95, "Saving results...")
 
         traj_path = STORAGE_DIR / f"trajectory_{job_id}.pdb"
+        energy_csv_path = STORAGE_DIR / f"energies_{job_id}.pdb"
+
+        energies = []
+        total_frames = request.steps // request.frame_interval
+        frame_count = 0
+
+        with open(traj_path, "w") as traj_file:
+            app.PDBFile.writeFile(modeller.topology, modeller.positions, traj_file)
+
+            with open(energy_csv_path, "w") as energy_file:
+                energy_file.write("step,energy_kj_mol\n")
+
+                for i in range(0, request.steps, request.frame_interval):
+                    integrator.step(request.frame_interval)
+                    state = context.getState(getPositions=True, getEnergy=True)
+                    positions = state.getPositions(asNumpy=True).value_in_unit(unit.nanometer)
+                    energy = state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
+                    energies.append(float(energy))
+
+                    traj_file.write("MODEL\n")
+                    app.PDBFile.writeFile(modeller.topology, positions * unit.nanometer, traj_file)
+                    traj_file.write("ENDMDL\n")
+
+                    energy_file.write(f"{i * request.frame_interval},{energy}\n")
+                    frame_count += 1
+
+                    pct = 65 + int(30 * (i // request.frame_interval) / max(total_frames, 1))
+                    _update_progress(job_id, pct, f"Step {i}/{request.steps} ({frame_count} frames)")
+
+                    if i % (request.frame_interval * 5) == 0 and request.notify_on_complete:
+                        pct_total = int(65 + 30 * i / max(request.steps, 1))
+                        notifications.notify_simulation_progress(
+                            job_id,
+                            pct_total,
+                            f"Step {i}/{request.steps} ({i * 0.002 / 1000:.1f}ns)",
+                        )
+
+        _update_progress(job_id, 95, "Saving final frame...")
+
         last_frame_path = STORAGE_DIR / f"frame_last_{job_id}.pdb"
-        energy_csv_path = STORAGE_DIR / f"energies_{job_id}.csv"
-
-        with open(traj_path, "w") as f:
-            app.PDBFile.writeFile(modeller.topology, frames[0] * unit.nanometer, f)
-            for frame in frames[1:]:
-                f.write("MODEL\n")
-                app.PDBFile.writeFile(modeller.topology, frame * unit.nanometer, f)
-                f.write("ENDMDL\n")
-
         last_state = context.getState(getPositions=True)
         with open(last_frame_path, "w") as f:
             app.PDBFile.writeFile(
@@ -396,24 +525,21 @@ def _run_dynamics(job_id: str, request: DynamicsRequest):
                 f,
             )
 
-        with open(energy_csv_path, "w") as f:
-            f.write("step,energy_kj_mol\n")
-            for i, e in enumerate(energies):
-                f.write(f"{i * request.frame_interval},{e}\n")
-
-        avg_e = float(np.mean(energies[-10:]))
+        avg_e = float(np.mean(energies[-10:])) if energies else 0.0
         sim_time_ns = request.steps * 0.002 / 1000
 
         result = {
             "trajectory_path": str(traj_path),
             "final_frame_path": str(last_frame_path),
             "energy_csv_path": str(energy_csv_path),
-            "n_frames": len(frames),
+            "n_frames": frame_count,
             "n_steps": request.steps,
             "sim_time_ns": sim_time_ns,
             "temperature_K": request.temperature,
             "avg_energy_kj_mol": round(avg_e, 4),
             "solvent_model": request.solvent_model,
+            "platform": platform.getName(),
+            "n_atoms": n_atoms,
         }
         _set_job_status(job_id, "completed", result=result, progress=100)
 
@@ -428,7 +554,7 @@ def _run_dynamics(job_id: str, request: DynamicsRequest):
                 },
             )
 
-        logger.info(f"Dynamics job {job_id} completed: {sim_time_ns}ns")
+        logger.info(f"Dynamics job {job_id} completed: {sim_time_ns}ns, {frame_count} frames, platform={platform.getName()}")
 
     except ImportError as e:
         _set_job_status(job_id, "failed", error=f"OpenMM not available: {e}")
@@ -774,6 +900,9 @@ def _run_minimize(job_id: str, pdb_content: str):
         forcefield = app.ForceField("amber14/protein.ff14SB.xml", "amber14/tip3p.xml")
         modeller = app.Modeller(pdb.topology, pdb.positions)
         modeller.addHydrogens(forcefield)
+
+        platform, platform_props, _ = _get_best_platform()
+
         system = forcefield.createSystem(
             modeller.topology,
             nonbondedMethod=app.PME,
@@ -782,7 +911,7 @@ def _run_minimize(job_id: str, pdb_content: str):
         integrator = mm.LangevinIntegrator(
             300 * unit.kelvin, 1 / unit.picosecond, 0.002 * unit.picosecond
         )
-        context = mm.Context(system, integrator, _get_best_platform())
+        context = mm.Context(system, integrator, platform, platform_props)
         context.setPositions(modeller.positions)
         mm.LocalEnergyMinimizer.minimize(context, maxIterations=1000)
         state = context.getState(getPositions=True)
@@ -801,6 +930,7 @@ def _run_minimize(job_id: str, pdb_content: str):
                 "energy_kj_mol": round(
                     state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole), 4
                 ),
+                "platform": platform.getName(),
             },
             progress=100,
         )

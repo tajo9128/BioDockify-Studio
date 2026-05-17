@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Card, Button } from '@/components/ui'
+import { InteractionPanel3D } from '@/components/InteractionPanel3D'
+import { InteractionDiagram2D } from '@/components/InteractionDiagram2D'
 
 export interface ViewerProps {
   trajectoryPath?: string
@@ -355,7 +357,11 @@ export function Viewer() {
   })
   const [showTrajectoryControls, setShowTrajectoryControls] = useState(false)
   const [showSurface, setShowSurface] = useState(false)
-  const [_activePanel, _setActivePanel] = useState<'style' | 'trajectory' | 'analysis'>('style')
+  const [surfaceColor, setSurfaceColor] = useState<'white' | 'element' | 'hydrophobicity' | 'chain'>('white')
+  const [activePanel, setActivePanel] = useState<'style' | 'interactions' | 'analysis'>('style')
+  const [receptorPath, setReceptorPath] = useState('')
+  const [ligandPath, setLigandPath] = useState('')
+  const [ligandSmiles, setLigandSmiles] = useState('')
   const animationRef = useRef<number | null>(null)
   const lastFrameRef = useRef<number>(0)
   const currentFrameRef = useRef(0)
@@ -597,10 +603,39 @@ export function Viewer() {
     if (showSurface) {
       viewer.removeSurface('surface')
     } else {
-      viewer.addSurface('surface', { opacity: 0.5, color: 'white' })
+      const surfaceOpts: any = { opacity: 0.5 }
+      if (surfaceColor === 'element') {
+        surfaceOpts.colorscheme = 'element'
+      } else if (surfaceColor === 'chain') {
+        surfaceOpts.colorscheme = 'chain'
+      } else if (surfaceColor === 'hydrophobicity') {
+        surfaceOpts.color = 'hydrophobicity'
+      } else {
+        surfaceOpts.color = 'white'
+      }
+      viewer.addSurface('surface', surfaceOpts)
     }
     viewer.render()
     setShowSurface(!showSurface)
+  }
+
+  const handleSurfaceColorChange = (color: 'white' | 'element' | 'hydrophobicity' | 'chain') => {
+    setSurfaceColor(color)
+    if (showSurface && viewerRef.current) {
+      viewerRef.current.removeSurface('surface')
+      const surfaceOpts: any = { opacity: 0.5 }
+      if (color === 'element') {
+        surfaceOpts.colorscheme = 'element'
+      } else if (color === 'chain') {
+        surfaceOpts.colorscheme = 'chain'
+      } else if (color === 'hydrophobicity') {
+        surfaceOpts.color = 'hydrophobicity'
+      } else {
+        surfaceOpts.color = 'white'
+      }
+      viewerRef.current.addSurface('surface', surfaceOpts)
+      viewerRef.current.render()
+    }
   }
 
   return (
@@ -634,13 +669,13 @@ export function Viewer() {
                 { icon: '🔄', label: 'Auto Rotate', handler: handleRotate },
                 { icon: '⊕', label: 'Zoom Fit', handler: handleZoomFit },
                 { icon: '↺', label: 'Reset View', handler: handleReset },
-                ...(showTrajectoryControls ? [{ icon: '🎬', label: 'Surface', handler: handleToggleSurface }] : []),
+                { icon: '🎬', label: showSurface ? 'Hide Surface' : 'Show Surface', handler: handleToggleSurface },
                 ...(bindingSite ? [{ icon: '🎯', label: 'Focus Site', handler: handleCenterBindingSite }] : []),
                 { icon: '📷', label: 'Screenshot', handler: handleScreenshot },
               ].map((btn) => (
                 <Button
                   key={btn.label}
-                  variant="outline"
+                  variant={btn.label.includes('Surface') && showSurface ? 'primary' : 'outline'}
                   size="sm"
                   onClick={btn.handler}
                 >
@@ -716,41 +751,164 @@ export function Viewer() {
           </Card>
         </div>
 
-        {/* Style Panel */}
-        <Card>
-          <h3 className="font-bold text-text-primary mb-4">Display Style</h3>
-
-          <div className="space-y-2 mb-6">
-            {VIEW_STYLES.map((s) => (
-              <Button
-                key={s.id}
-                variant={style === s.id ? 'primary' : 'outline'}
-                size="sm"
-                className="w-full justify-start"
-                onClick={() => setStyle(s.id)}
+        {/* Right Panel with Tabs */}
+        <div className="space-y-4">
+          {/* Tab Navigation */}
+          <div className="flex gap-1 bg-surface-secondary rounded-lg p-1">
+            {[
+              { id: 'style' as const, label: 'Style' },
+              { id: 'interactions' as const, label: 'Interactions' },
+              { id: 'analysis' as const, label: 'Analysis' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActivePanel(tab.id)}
+                className={`flex-1 py-1.5 px-2 rounded-md text-xs font-medium transition-colors ${
+                  activePanel === tab.id
+                    ? 'bg-primary text-white shadow-sm'
+                    : 'text-text-secondary hover:text-text-primary'
+                }`}
               >
-                {s.label}
-              </Button>
+                {tab.label}
+              </button>
             ))}
           </div>
 
-          <h3 className="font-bold text-text-primary mb-4">Color Scheme</h3>
-          <div className="space-y-2">
-            {COLOR_SCHEMES.map((c) => (
-              <Button
-                key={c.id}
-                variant={colorScheme === c.id ? 'primary' : 'outline'}
-                size="sm"
-                className="w-full justify-start"
-                onClick={() => setColorScheme(c.id)}
-              >
-                {c.label}
-              </Button>
-            ))}
-          </div>
+          {/* Style Panel */}
+          {activePanel === 'style' && (
+            <Card>
+              <h3 className="font-bold text-text-primary mb-4">Display Style</h3>
+              <div className="space-y-2 mb-6">
+                {VIEW_STYLES.map((s) => (
+                  <Button
+                    key={s.id}
+                    variant={style === s.id ? 'primary' : 'outline'}
+                    size="sm"
+                    className="w-full justify-start"
+                    onClick={() => setStyle(s.id)}
+                  >
+                    {s.label}
+                  </Button>
+                ))}
+              </div>
 
+              <h3 className="font-bold text-text-primary mb-4">Color Scheme</h3>
+              <div className="space-y-2">
+                {COLOR_SCHEMES.map((c) => (
+                  <Button
+                    key={c.id}
+                    variant={colorScheme === c.id ? 'primary' : 'outline'}
+                    size="sm"
+                    className="w-full justify-start"
+                    onClick={() => setColorScheme(c.id)}
+                  >
+                    {c.label}
+                  </Button>
+                ))}
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-border-light">
+                <h3 className="font-bold text-text-primary mb-3">Surface</h3>
+                <Button
+                  variant={showSurface ? 'primary' : 'outline'}
+                  size="sm"
+                  className="w-full"
+                  onClick={handleToggleSurface}
+                >
+                  {showSurface ? 'Hide Surface' : 'Show Surface'}
+                </Button>
+                {showSurface && (
+                  <div className="mt-3 space-y-2">
+                    <label className="block text-xs font-medium text-text-secondary">Surface Color</label>
+                    {(['white', 'element', 'chain', 'hydrophobicity'] as const).map((c) => (
+                      <Button
+                        key={c}
+                        variant={surfaceColor === c ? 'primary' : 'outline'}
+                        size="sm"
+                        className="w-full justify-start capitalize"
+                        onClick={() => handleSurfaceColorChange(c)}
+                      >
+                        {c}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Card>
+          )}
+
+          {/* Interactions Panel */}
+          {activePanel === 'interactions' && (
+            <Card>
+              <h3 className="font-bold text-text-primary mb-4">Interaction Paths</h3>
+              <div className="space-y-3 mb-4">
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Receptor PDB</label>
+                  <input
+                    type="text"
+                    value={receptorPath}
+                    onChange={(e) => setReceptorPath(e.target.value)}
+                    placeholder="/path/to/receptor.pdb"
+                    className="w-full px-2 py-1.5 border border-border-light rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-primary/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Ligand PDB</label>
+                  <input
+                    type="text"
+                    value={ligandPath}
+                    onChange={(e) => setLigandPath(e.target.value)}
+                    placeholder="/path/to/ligand.pdb"
+                    className="w-full px-2 py-1.5 border border-border-light rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-primary/50"
+                  />
+                </div>
+              </div>
+              <InteractionPanel3D
+                receptorPath={receptorPath}
+                ligandPath={ligandPath}
+                viewer={viewerRef.current}
+              />
+            </Card>
+          )}
+
+          {/* Analysis Panel */}
+          {activePanel === 'analysis' && (
+            <Card>
+              <h3 className="font-bold text-text-primary mb-4">2D Interaction Diagram</h3>
+              <div className="space-y-3 mb-4">
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Receptor PDB</label>
+                  <input
+                    type="text"
+                    value={receptorPath}
+                    onChange={(e) => setReceptorPath(e.target.value)}
+                    placeholder="/path/to/receptor.pdb"
+                    className="w-full px-2 py-1.5 border border-border-light rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-primary/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Ligand SMILES</label>
+                  <input
+                    type="text"
+                    value={ligandSmiles}
+                    onChange={(e) => setLigandSmiles(e.target.value)}
+                    placeholder="CC(=O)OC1=CC=CC=C1C(=O)O"
+                    className="w-full px-2 py-1.5 border border-border-light rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-primary/50"
+                  />
+                </div>
+              </div>
+              <InteractionDiagram2D
+                receptorPath={receptorPath}
+                ligandSmiles={ligandSmiles}
+                width={320}
+                height={350}
+              />
+            </Card>
+          )}
+
+          {/* RMSD Analysis (trajectory mode) */}
           {showTrajectoryControls && trajState.rmsdHistory.length > 0 && (
-            <div className="mt-6">
+            <Card>
               <div className="flex items-center gap-2 mb-3">
                 <h3 className="font-bold text-text-primary">RMSD Analysis</h3>
                 <div className="relative group">
@@ -813,9 +971,9 @@ export function Viewer() {
                   RMSD plot showing structural deviation over time
                 </p>
               </div>
-            </div>
+            </Card>
           )}
-        </Card>
+        </div>
       </div>
     </div>
   )

@@ -15,6 +15,7 @@ import {
   createPublication,
   getNotifyStatus,
   testNotification,
+  getMDGPUStatus,
   type MDDynamicsRequest,
   type MDJobResponse,
   type MDJobStatus,
@@ -74,12 +75,23 @@ export function MoleculeDynamics() {
   const [analysisLoading, setAnalysisLoading] = useState<string | null>(null)
   const [analysisError, setAnalysisError] = useState<string | null>(null)
   const [pubLoading, setPubLoading] = useState(false)
+  const [gpuStatus, setGpuStatus] = useState<{ gpu_available: boolean; recommended_platform: string; message: string } | null>(null)
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     loadNotifyStatus()
+    loadGpuStatus()
   }, [])
+
+  async function loadGpuStatus() {
+    try {
+      const status = await getMDGPUStatus()
+      setGpuStatus({ gpu_available: status.gpu_available, recommended_platform: status.recommended_platform, message: status.message })
+    } catch (e) {
+      console.warn('Could not load GPU status')
+    }
+  }
 
   useEffect(() => {
     if (currentJobId && jobStatus?.status === 'running') {
@@ -229,6 +241,32 @@ export function MoleculeDynamics() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-text-primary">Molecular Dynamics</h1>
         <p className="text-text-secondary mt-1">OpenMM CPU simulation + MD-Suite analysis</p>
+      </div>
+
+      {/* GPU Requirements Banner */}
+      <div className="mb-6 p-4 rounded-lg border border-amber-500/30 bg-amber-500/5">
+        <div className="flex items-start gap-3">
+          <span className="text-amber-400 text-xl mt-0.5">⚠️</span>
+          <div>
+            <h3 className="font-bold text-amber-400 text-sm mb-2">GPU Requirements for MD Simulations</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="p-3 rounded bg-gray-800/50 border border-gray-700">
+                <p className="font-bold text-gray-300 mb-1">Minimum</p>
+                <p className="text-gray-400">NVIDIA GTX 1650 — 4 GB VRAM</p>
+                <p className="text-gray-500 mt-1">Small peptides only, CPU fallback for larger systems</p>
+              </div>
+              <div className="p-3 rounded bg-gray-800/50 border border-gray-700">
+                <p className="font-bold text-gray-300 mb-1">Recommended</p>
+                <p className="text-gray-400">NVIDIA RTX 3060 — 12 GB VRAM</p>
+                <p className="text-gray-500 mt-1">Full protein simulations, mixed precision</p>
+              </div>
+            </div>
+            <p className="text-gray-500 mt-2">
+              Systems with &lt; 8 GB VRAM will use mixed precision. GPU-accelerated MD requires NVIDIA CUDA-compatible hardware.
+              CPU mode is available but significantly slower.
+            </p>
+          </div>
+        </div>
       </div>
 
       <Tabs tabs={TABS} activeTab={activeTab} onChange={setActiveTab} />
@@ -395,7 +433,9 @@ export function MoleculeDynamics() {
                   </div>
                   <div className="bg-gray-800 rounded p-3">
                     <p className="text-xs text-gray-400">Platform</p>
-                    <p className="text-lg font-bold text-white">CPU</p>
+                    <p className={`text-lg font-bold ${gpuStatus?.gpu_available ? 'text-green-400' : 'text-yellow-400'}`}>
+                      {gpuStatus?.recommended_platform || 'Detecting...'}
+                    </p>
                   </div>
                   <div className="bg-gray-800 rounded p-3">
                     <p className="text-xs text-gray-400">Ensemble</p>
@@ -406,6 +446,17 @@ export function MoleculeDynamics() {
                     <p className="text-lg font-bold text-white">2fs</p>
                   </div>
                 </div>
+
+                {gpuStatus && (
+                  <div className={`rounded p-3 border ${gpuStatus.gpu_available ? 'bg-green-900/20 border-green-800' : 'bg-yellow-900/20 border-yellow-800'}`}>
+                    <p className="text-xs text-gray-400 mb-1">GPU Status</p>
+                    <p className={`text-sm font-bold ${gpuStatus.gpu_available ? 'text-green-400' : 'text-yellow-400'}`}>
+                      {gpuStatus.gpu_available ? 'GPU Detected' : 'No GPU — CPU Mode'}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">{gpuStatus.message}</p>
+                  </div>
+                )}
+
                 <div className="bg-gray-800 rounded p-3">
                   <p className="text-xs text-gray-400 mb-2">MD-Suite Modules</p>
                   <div className="flex flex-wrap gap-1">
