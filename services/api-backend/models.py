@@ -45,6 +45,9 @@ class Job(Base):
     md_results = relationship(
         "MDResult", back_populates="job", cascade="all, delete-orphan"
     )
+    qsar_models = relationship(
+        "QSARModel", back_populates="job", cascade="all, delete-orphan"
+    )
 
 
 class DockingResult(Base):
@@ -135,6 +138,34 @@ class MDResult(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     job = relationship("Job", back_populates="md_results")
+
+
+class QSARModel(Base):
+    __tablename__ = "qsar_models"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_uuid = Column(
+        String(36),
+        ForeignKey("jobs.job_uuid", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    model_id = Column(String(50), nullable=False, index=True)
+    model_name = Column(String(255), nullable=True)
+    model_type = Column(String(50), nullable=True)
+    cv_r2 = Column(Float, nullable=True)
+    cv_rmse = Column(Float, nullable=True)
+    cv_mae = Column(Float, nullable=True)
+    train_r2 = Column(Float, nullable=True)
+    n_compounds = Column(Integer, nullable=True)
+    n_features = Column(Integer, nullable=True)
+    feature_names = Column(JSON, nullable=True)
+    descriptor_groups = Column(JSON, nullable=True)
+    activity_column = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    job = relationship("Job", back_populates="qsar_models")
 
 
 class UserProfile(Base):

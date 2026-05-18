@@ -32,25 +32,46 @@ interface InteractionPanelProps {
   ligandPdb: string;
   receptorPdb: string;
   isDark: boolean;
+  preloadedData?: InteractionData | null;
 }
 
-export function InteractionPanel({ ligandPdb, receptorPdb, isDark }: InteractionPanelProps) {
-  const [interactions, setInteractions] = useState<InteractionData | null>(null)
+export function InteractionPanel({ ligandPdb, receptorPdb, isDark, preloadedData }: InteractionPanelProps) {
+  const [interactions, setInteractions] = useState<InteractionData | null>(preloadedData || null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'summary' | 'hbonds' | 'hydrophobic' | 'pi' | 'salt'>('summary')
 
   useEffect(() => {
+    if (preloadedData) {
+      setInteractions(preloadedData)
+      return
+    }
     if (!ligandPdb || !receptorPdb) return
     setLoading(true)
+    setError(null)
     fetch('/api/interactions/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ligand_pdb: ligandPdb, receptor_pdb: receptorPdb })
     })
-      .then(r => r.json())
-      .then(data => { setInteractions(data); setLoading(false) })
-      .catch(() => setLoading(false))
-  }, [ligandPdb, receptorPdb])
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`)
+        return r.json()
+      })
+      .then(data => {
+        if (data.error) {
+          setError(data.error)
+        } else {
+          setInteractions(data)
+        }
+        setLoading(false)
+      })
+      .catch((err) => {
+        console.error('Interaction analysis failed:', err)
+        setError(err.message || 'Failed to analyze interactions')
+        setLoading(false)
+      })
+  }, [ligandPdb, receptorPdb, preloadedData])
 
   if (loading) {
     return (
@@ -60,11 +81,11 @@ export function InteractionPanel({ ligandPdb, receptorPdb, isDark }: Interaction
     )
   }
 
-  if (!interactions || interactions.error) {
+  if (!interactions || interactions.error || error) {
     return (
       <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-800' : 'bg-white'}`}>
-        <p className="text-sm text-gray-500 text-center py-4">
-          {interactions?.error || 'No interactions to display'}
+        <p className="text-sm text-red-400 text-center py-4">
+          {error || interactions?.error || 'Provide ligand and receptor PDB to analyze'}
         </p>
       </div>
     )

@@ -10,6 +10,9 @@ import {
   predictBatch,
   listModels,
   deleteModel,
+  runYScrambling,
+  getSHAPImportance,
+  getWilliamsPlot,
   type DatasetUploadResult,
   type TrainResult,
   type SavedModel,
@@ -40,6 +43,7 @@ const TABS = [
   { id: 'dataset', label: '📁 Dataset' },
   { id: 'train', label: '🧠 Train Model' },
   { id: 'predict', label: '🔮 Predict' },
+  { id: 'validate', label: '🔍 Validate' },
   { id: 'models', label: '💾 Saved Models' },
 ]
 
@@ -70,6 +74,16 @@ export function QSARModeling() {
   const [bulkPredictions, setBulkPredictions] = useState<any[] | null>(null)
   const [predictLoading, setPredictLoading] = useState(false)
   const [predictError, setPredictError] = useState<string | null>(null)
+  const [validateTab, setValidateTab] = useState<'yscrambling' | 'shap' | 'williams'>('yscrambling')
+  const [yscramblingResult, setYscramblingResult] = useState<any | null>(null)
+  const [yscramblingLoading, setYscramblingLoading] = useState(false)
+  const [yscramblingError, setYscramblingError] = useState<string | null>(null)
+  const [shapResult, setShapResult] = useState<any | null>(null)
+  const [shapLoading, setShapLoading] = useState(false)
+  const [shapError, setShapError] = useState<string | null>(null)
+  const [williamsResult, setWilliamsResult] = useState<any | null>(null)
+  const [williamsLoading, setWilliamsLoading] = useState(false)
+  const [williamsError, setWilliamsError] = useState<string | null>(null)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
@@ -211,6 +225,60 @@ export function QSARModeling() {
       loadModels()
     } catch (e) {
       console.warn('Delete failed')
+    }
+  }
+
+  async function handleYScrambling() {
+    if (!dataset || !dataset.valid_smiles || dataset.valid_smiles.length === 0) return
+    setYscramblingLoading(true)
+    setYscramblingError(null)
+    setYscramblingResult(null)
+    try {
+      const result = await runYScrambling({
+        smiles_list: dataset.valid_smiles,
+        activity_column: activityCol,
+        model_type: modelType,
+        n_iterations: 10,
+        cv_folds: cvFolds,
+      })
+      setYscramblingResult(result)
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.message || 'Y-Scrambling failed'
+      setYscramblingError(msg)
+    } finally {
+      setYscramblingLoading(false)
+    }
+  }
+
+  async function handleSHAP() {
+    if (!selectedModelId) return
+    setShapLoading(true)
+    setShapError(null)
+    setShapResult(null)
+    try {
+      const result = await getSHAPImportance(selectedModelId, 20)
+      setShapResult(result)
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.message || 'SHAP analysis failed'
+      setShapError(msg)
+    } finally {
+      setShapLoading(false)
+    }
+  }
+
+  async function handleWilliamsPlot() {
+    if (!selectedModelId) return
+    setWilliamsLoading(true)
+    setWilliamsError(null)
+    setWilliamsResult(null)
+    try {
+      const result = await getWilliamsPlot(selectedModelId)
+      setWilliamsResult(result)
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.message || 'Williams plot failed'
+      setWilliamsError(msg)
+    } finally {
+      setWilliamsLoading(false)
     }
   }
 
@@ -617,6 +685,229 @@ export function QSARModeling() {
                 </div>
               )}
             </Card>
+          </div>
+        )}
+
+        {activeTab === 'validate' && (
+          <div className="mt-4 space-y-6">
+            <div className="flex gap-2 border-b pb-2">
+              <button
+                onClick={() => setValidateTab('yscrambling')}
+                className={`px-3 py-1 text-sm rounded ${validateTab === 'yscrambling' ? 'bg-primary text-white' : 'text-gray-400'}`}
+              >
+                Y-Scrambling
+              </button>
+              <button
+                onClick={() => setValidateTab('shap')}
+                className={`px-3 py-1 text-sm rounded ${validateTab === 'shap' ? 'bg-primary text-white' : 'text-gray-400'}`}
+              >
+                SHAP Importance
+              </button>
+              <button
+                onClick={() => setValidateTab('williams')}
+                className={`px-3 py-1 text-sm rounded ${validateTab === 'williams' ? 'bg-primary text-white' : 'text-gray-400'}`}
+              >
+                Williams Plot
+              </button>
+            </div>
+
+            {validateTab === 'yscrambling' && (
+              <Card>
+                <h3 className="font-bold text-text-primary mb-4">Y-Scrambling Validation</h3>
+                <p className="text-sm text-gray-400 mb-4">
+                  Randomizes target variable to verify model is not learning random noise.
+                  Mean R² should be &lt; 0.2 for a valid model.
+                </p>
+                <Button
+                  onClick={handleYScrambling}
+                  disabled={!dataset || yscramblingLoading}
+                  className="mb-4"
+                >
+                  {yscramblingLoading ? 'Running...' : 'Run Y-Scrambling'}
+                </Button>
+                {yscramblingError && (
+                  <div className="p-3 rounded bg-red-900/50 border border-red-700 text-red-300 text-sm mb-4">
+                    {yscramblingError}
+                  </div>
+                )}
+                {yscramblingResult && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-gray-800 rounded p-3">
+                        <p className="text-xs text-gray-400">Mean R² (scrambled)</p>
+                        <p className={`text-2xl font-bold ${yscramblingResult.mean_r2 < 0.2 ? 'text-green-400' : 'text-red-400'}`}>
+                          {yscramblingResult.mean_r2.toFixed(4)}
+                        </p>
+                      </div>
+                      <div className="bg-gray-800 rounded p-3">
+                        <p className="text-xs text-gray-400">Model Valid</p>
+                        <p className={`text-2xl font-bold ${yscramblingResult.is_valid ? 'text-green-400' : 'text-red-400'}`}>
+                          {yscramblingResult.is_valid ? 'Yes' : 'No'}
+                        </p>
+                      </div>
+                      <div className="bg-gray-800 rounded p-3">
+                        <p className="text-xs text-gray-400">Max R²</p>
+                        <p className="text-xl font-bold text-white">{yscramblingResult.max_r2.toFixed(4)}</p>
+                      </div>
+                      <div className="bg-gray-800 rounded p-3">
+                        <p className="text-xs text-gray-400">Std R²</p>
+                        <p className="text-xl font-bold text-white">{yscramblingResult.std_r2.toFixed(4)}</p>
+                      </div>
+                    </div>
+                    {yscramblingResult.histogram_plot && (
+                      <div className="bg-gray-800 rounded p-4">
+                        <p className="text-xs text-gray-400 mb-2">R² Distribution</p>
+                        <div className="h-[300px]">
+                          {renderPlotly(
+                            JSON.parse(yscramblingResult.histogram_plot).data,
+                            JSON.parse(yscramblingResult.histogram_plot).layout
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {validateTab === 'shap' && (
+              <Card>
+                <h3 className="font-bold text-text-primary mb-4">SHAP Feature Importance</h3>
+                <p className="text-sm text-gray-400 mb-4">
+                  Shows which molecular descriptors contribute most to predictions.
+                </p>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-text-secondary mb-1">Select Model</label>
+                  <select
+                    value={selectedModelId}
+                    onChange={(e) => setSelectedModelId(e.target.value)}
+                    className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-white text-sm"
+                  >
+                    {savedModels.length === 0 && <option value="">No models saved</option>}
+                    {savedModels.map((m: SavedModel) => (
+                      <option key={m.model_id} value={m.model_id}>
+                        {m.name} ({m.model_type})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <Button
+                  onClick={handleSHAP}
+                  disabled={!selectedModelId || shapLoading}
+                  className="mb-4"
+                >
+                  {shapLoading ? 'Calculating...' : 'Calculate SHAP'}
+                </Button>
+                {shapError && (
+                  <div className="p-3 rounded bg-red-900/50 border border-red-700 text-red-300 text-sm mb-4">
+                    {shapError}
+                  </div>
+                )}
+                {shapResult && shapResult.success && (
+                  <div className="space-y-4">
+                    {shapResult.shap_plot && (
+                      <div className="bg-gray-800 rounded p-4">
+                        <p className="text-xs text-gray-400 mb-2">Feature Importance</p>
+                        <div className="h-[400px]">
+                          {renderPlotly(
+                            JSON.parse(shapResult.shap_plot).data,
+                            JSON.parse(shapResult.shap_plot).layout
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {shapResult.top_features && (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-gray-700 text-left text-gray-400">
+                              <th className="pb-2 font-medium">#</th>
+                              <th className="pb-2 font-medium">Feature</th>
+                              <th className="pb-2 font-medium">Importance</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {shapResult.top_features.map((f: any, i: number) => (
+                              <tr key={i} className="border-b border-gray-800">
+                                <td className="py-2 text-gray-500">{i + 1}</td>
+                                <td className="py-2 text-white font-mono text-xs">{f.feature}</td>
+                                <td className="py-2 text-blue-400">{f.importance.toFixed(4)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {validateTab === 'williams' && (
+              <Card>
+                <h3 className="font-bold text-text-primary mb-4">Williams Plot (Applicability Domain)</h3>
+                <p className="text-sm text-gray-400 mb-4">
+                  Visualizes the applicability domain using leverage vs standardized residuals.
+                  Points outside the thresholds are out of domain.
+                </p>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-text-secondary mb-1">Select Model</label>
+                  <select
+                    value={selectedModelId}
+                    onChange={(e) => setSelectedModelId(e.target.value)}
+                    className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-white text-sm"
+                  >
+                    {savedModels.length === 0 && <option value="">No models saved</option>}
+                    {savedModels.map((m: SavedModel) => (
+                      <option key={m.model_id} value={m.model_id}>
+                        {m.name} ({m.model_type})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <Button
+                  onClick={handleWilliamsPlot}
+                  disabled={!selectedModelId || williamsLoading}
+                  className="mb-4"
+                >
+                  {williamsLoading ? 'Generating...' : 'Generate Williams Plot'}
+                </Button>
+                {williamsError && (
+                  <div className="p-3 rounded bg-red-900/50 border border-red-700 text-red-300 text-sm mb-4">
+                    {williamsError}
+                  </div>
+                )}
+                {williamsResult && williamsResult.success && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-gray-800 rounded p-3">
+                        <p className="text-xs text-gray-400">In Domain</p>
+                        <p className="text-xl font-bold text-green-400">{williamsResult.n_in_domain}</p>
+                      </div>
+                      <div className="bg-gray-800 rounded p-3">
+                        <p className="text-xs text-gray-400">Out of Domain</p>
+                        <p className="text-xl font-bold text-red-400">{williamsResult.n_out_of_domain}</p>
+                      </div>
+                      <div className="bg-gray-800 rounded p-3">
+                        <p className="text-xs text-gray-400">Leverage Threshold</p>
+                        <p className="text-xl font-bold text-white">{williamsResult.h_threshold.toFixed(3)}</p>
+                      </div>
+                    </div>
+                    {williamsResult.williams_plot && (
+                      <div className="bg-gray-800 rounded p-4">
+                        <p className="text-xs text-gray-400 mb-2">Williams Plot</p>
+                        <div className="h-[400px]">
+                          {renderPlotly(
+                            JSON.parse(williamsResult.williams_plot).data,
+                            JSON.parse(williamsResult.williams_plot).layout
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </Card>
+            )}
           </div>
         )}
 

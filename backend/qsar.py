@@ -194,6 +194,7 @@ def process_dataset_csv(
             "nan_count": int(np.isnan(X_arr).sum()),
             "failed_smiles": desc_result["failed_smiles"],
             "failed_count": len(desc_result["failed_smiles"]),
+            "valid_smiles": desc_result["valid_smiles"],
         }
     except Exception as e:
         logger.error(f"Dataset processing error: {e}")

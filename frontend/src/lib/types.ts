@@ -22,14 +22,17 @@ export interface Job {
   id: number
   job_uuid: string
   job_name: string
-  receptor_file: string
-  ligand_file: string
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+  job_type?: string
+  receptor_file?: string
+  ligand_file?: string
+  status: string
   created_at: string
   completed_at?: string
   binding_energy?: number
   confidence_score?: number
-  engine: string
+  engine?: string
+  parameters?: Record<string, any>
+  result?: Record<string, any>
 }
 
 export interface DockingResult {
@@ -198,6 +201,37 @@ export interface DockingProgress {
   total: number
   status: 'running' | 'completed' | 'cancelled' | 'failed' | 'unknown'
   message: string
+}
+
+export interface SystemStatus {
+  status: 'healthy' | 'error'
+  timestamp: string
+  system: {
+    cpu_percent: number
+    memory_total_gb: number
+    memory_used_gb: number
+    memory_percent: number
+    disk_total_gb: number
+    disk_used_gb: number
+    disk_percent: number
+  }
+  gpu: {
+    available: boolean
+    info: Record<string, string>
+  }
+  services: Record<string, { available: boolean; status: string }>
+  jobs: {
+    total: number
+    completed: number
+    failed: number
+    running: number
+    recent: Array<{
+      job_name: string
+      status: string
+      binding_energy?: number
+      created_at: string
+    }>
+  }
 }
 
 export interface OllamaStatus {

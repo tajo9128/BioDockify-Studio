@@ -85,6 +85,28 @@ CREATE TABLE IF NOT EXISTS md_results (
 
 CREATE INDEX IF NOT EXISTS idx_md_results_job ON md_results(job_uuid);
 
+CREATE TABLE IF NOT EXISTS qsar_models (
+    id SERIAL PRIMARY KEY,
+    job_uuid VARCHAR(36) UNIQUE NOT NULL,
+    model_id VARCHAR(50) NOT NULL,
+    model_name VARCHAR(255),
+    model_type VARCHAR(50),
+    cv_r2 FLOAT,
+    cv_rmse FLOAT,
+    cv_mae FLOAT,
+    train_r2 FLOAT,
+    n_compounds INTEGER,
+    n_features INTEGER,
+    feature_names JSONB,
+    descriptor_groups JSONB,
+    activity_column VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (job_uuid) REFERENCES jobs(job_uuid) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_qsar_job ON qsar_models(job_uuid);
+CREATE INDEX IF NOT EXISTS idx_qsar_model_id ON qsar_models(model_id);
+
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(100) UNIQUE NOT NULL,

@@ -247,10 +247,31 @@ async def upload_file(file: UploadFile = File(...)):
 
 @app.post("/jobs", response_model=JobResponse)
 async def create_job(job: JobCreate, background_tasks: BackgroundTasks):
-    """Create a new job and queue it"""
+    """Create a new job and queue it — persists to PostgreSQL"""
     import uuid
+    from datetime import datetime
+    from db import SessionLocal
+    from models import Job
 
     job_id = str(uuid.uuid4())
+
+    # Create persistent record in PostgreSQL
+    try:
+        db = SessionLocal()
+        db_job = Job(
+            job_uuid=job_id,
+            job_name=job.name,
+            job_type=job.job_type,
+            status="pending",
+            parameters=job.parameters,
+            created_at=datetime.utcnow(),
+        )
+        db.add(db_job)
+        db.commit()
+    except Exception as e:
+        logger.error(f"Failed to persist job to PostgreSQL: {e}")
+    finally:
+        db.close()
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
@@ -269,6 +290,16 @@ async def create_job(job: JobCreate, background_tasks: BackgroundTasks):
                     f"{RDKIT_SERVICE_URL}/process",
                     json={"job_id": job_id, **job.parameters},
                 )
+            elif job.job_type == "qsar":
+                response = await client.post(
+                    f"{QSAR_SERVICE_URL}/train",
+                    json={"job_id": job_id, **job.parameters},
+                )
+            elif job.job_type == "md":
+                response = await client.post(
+                    f"{MD_SERVICE_URL}/dynamics",
+                    json={"job_id": job_id, **job.parameters},
+                )
             else:
                 raise HTTPException(
                     status_code=400, detail=f"Unknown job type: {job.job_type}"
@@ -276,6 +307,20 @@ async def create_job(job: JobCreate, background_tasks: BackgroundTasks):
 
             response.raise_for_status()
             result = response.json()
+
+            # Update status to queued/running
+            try:
+                db = SessionLocal()
+                db_job = db.query(Job).filter(Job.job_uuid == job_id).first()
+                if db_job:
+                    db_job.status = "queued"
+                    db_job.updated_at = datetime.utcnow()
+                    db.commit()
+            except Exception as e:
+                logger.error(f"Failed to update job status: {e}")
+            finally:
+                db.close()
+
             return JobResponse(
                 job_id=job_id,
                 status="queued",
@@ -283,26 +328,64 @@ async def create_job(job: JobCreate, background_tasks: BackgroundTasks):
             )
         except httpx.HTTPError as e:
             logger.error(f"Failed to create job: {e}")
+
+            # Update status to error
+            try:
+                db = SessionLocal()
+                db_job = db.query(Job).filter(Job.job_uuid == job_id).first()
+                if db_job:
+                    db_job.status = "error"
+                    db_job.updated_at = datetime.utcnow()
+                    db.commit()
+            except Exception:
+                pass
+            finally:
+                db.close()
+
             return JobResponse(job_id=job_id, status="error", message=str(e))
 
 
 @app.get("/jobs/{job_id}")
 async def get_job_status(job_id: str):
-    """Get job status from Redis — checks both job:* and docking_job:* keys"""
-    import redis
-    import json
+    """Get job status from PostgreSQL with Redis fallback"""
+    from db import SessionLocal
+    from models import Job
 
+    # Try PostgreSQL first
     try:
-        r = redis.from_url(REDIS_URL)
-        job_data = r.get(f"job:{job_id}")
-        if job_data:
-            return json.loads(job_data)
-        job_data = r.get(f"docking_job:{job_id}")
-        if job_data:
-            return json.loads(job_data)
-        return {"job_id": job_id, "status": "not_found"}
+        db = SessionLocal()
+        db_job = db.query(Job).filter(Job.job_uuid == job_id).first()
+        if db_job:
+            result = {
+                "job_id": db_job.job_uuid,
+                "job_name": db_job.job_name,
+                "job_type": db_job.job_type,
+                "status": db_job.status,
+                "created_at": db_job.created_at.isoformat() if db_job.created_at else "",
+                "completed_at": db_job.completed_at.isoformat() if db_job.completed_at else "",
+                "parameters": db_job.parameters,
+                "result": db_job.result,
+            }
+            db.close()
+            return result
+        db.close()
     except Exception as e:
-        return {"job_id": job_id, "status": "error", "message": str(e)}
+        logger.warning(f"PostgreSQL job lookup failed: {e}")
+
+    # Fallback to Redis
+    try:
+        import redis
+        import json
+
+        r = redis.from_url(REDIS_URL)
+        for prefix in ["job:", "docking_job:", "qsar_job:", "md_job:"]:
+            job_data = r.get(f"{prefix}{job_id}")
+            if job_data:
+                return json.loads(job_data)
+    except Exception as e:
+        logger.error(f"Redis job lookup failed: {e}")
+
+    return {"job_id": job_id, "status": "not_found"}
 
 
 @app.get("/jobs/{job_id}/results")
@@ -431,44 +514,82 @@ async def get_job_interactions(job_id: str, pose_id: int = None):
 
 
 @app.get("/jobs")
-async def list_jobs(limit: int = 50):
-    """List recent jobs from both job:* and docking_job:* Redis keys"""
-    import redis
-    import json
+async def list_jobs(limit: int = 50, job_type: Optional[str] = None, status: Optional[str] = None):
+    """List recent jobs from PostgreSQL with Redis fallback"""
+    from db import SessionLocal
+    from models import Job
+    from datetime import datetime
 
+    jobs = []
+
+    # Try PostgreSQL first
     try:
-        r = redis.from_url(REDIS_URL)
-        all_keys = r.keys("job:*") + r.keys("docking_job:*")
-        all_keys = all_keys[:limit]
-        jobs = []
-        for key in all_keys:
-            job_data = r.get(key)
-            if job_data:
-                try:
-                    data = json.loads(job_data)
-                    key_str = key.decode() if isinstance(key, bytes) else key
-                    job_uuid = key_str.replace("job:", "").replace("docking_job:", "")
-                    jobs.append(
-                        {
-                            "id": len(jobs),
-                            "job_uuid": job_uuid,
-                            "job_name": data.get("job_id", job_uuid),
-                            "receptor_file": data.get("receptor_path", ""),
-                            "ligand_file": data.get("ligand_path", ""),
-                            "status": data.get("status", "unknown").upper(),
-                            "created_at": data.get("created_at", ""),
-                            "completed_at": data.get("completed_at", ""),
-                            "binding_energy": data.get("result", {}).get("best_energy")
-                            if data.get("result")
-                            else None,
-                            "engine": data.get("engine", "vina"),
-                        }
-                    )
-                except Exception:
-                    pass
-        return {"jobs": jobs, "count": len(jobs)}
+        db = SessionLocal()
+        query = db.query(Job).order_by(Job.created_at.desc()).limit(limit)
+        if job_type:
+            query = query.filter(Job.job_type == job_type)
+        if status:
+            query = query.filter(Job.status == status.lower())
+
+        db_jobs = query.all()
+        for j in db_jobs:
+            jobs.append({
+                "id": j.id,
+                "job_uuid": j.job_uuid,
+                "job_name": j.job_name,
+                "job_type": j.job_type,
+                "status": j.status,
+                "created_at": j.created_at.isoformat() if j.created_at else "",
+                "completed_at": j.completed_at.isoformat() if j.completed_at else "",
+                "binding_energy": j.result.get("best_energy") if j.result and isinstance(j.result, dict) else None,
+                "engine": j.parameters.get("engine", "unknown") if j.parameters else "unknown",
+                "parameters": j.parameters,
+                "result": j.result,
+            })
+        db.close()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.warning(f"PostgreSQL job list failed, falling back to Redis: {e}")
+        jobs = []
+
+    # Fallback to Redis if PostgreSQL returned nothing or failed
+    if not jobs:
+        try:
+            import redis
+            import json
+
+            r = redis.from_url(REDIS_URL)
+            all_keys = r.keys("job:*") + r.keys("docking_job:*") + r.keys("qsar_job:*") + r.keys("md_job:*")
+            all_keys = all_keys[:limit]
+            for key in all_keys:
+                job_data = r.get(key)
+                if job_data:
+                    try:
+                        data = json.loads(job_data)
+                        key_str = key.decode() if isinstance(key, bytes) else key
+                        job_uuid = key_str.split(":")[-1]
+                        jobs.append(
+                            {
+                                "id": len(jobs),
+                                "job_uuid": job_uuid,
+                                "job_name": data.get("job_id", job_uuid),
+                                "job_type": data.get("job_type", "docking"),
+                                "status": data.get("status", "unknown"),
+                                "created_at": data.get("created_at", ""),
+                                "completed_at": data.get("completed_at", ""),
+                                "binding_energy": data.get("result", {}).get("best_energy")
+                                if data.get("result")
+                                else None,
+                                "engine": data.get("engine", "unknown"),
+                                "parameters": data.get("parameters"),
+                                "result": data.get("result"),
+                            }
+                        )
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.error(f"Redis job list failed: {e}")
+
+    return {"jobs": jobs, "count": len(jobs)}
 
 
 @app.post("/docking/{job_id}/cancel")
@@ -658,6 +779,18 @@ async def qsar_train_results(job_id: str):
             raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/qsar/train/jobs")
+async def qsar_list_training_jobs():
+    """List all QSAR training jobs"""
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.get(f"{QSAR_SERVICE_URL}/train/jobs")
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/qsar/predict")
 async def qsar_predict(model_id: str, smiles: str):
     async with httpx.AsyncClient(timeout=30.0) as client:
@@ -734,6 +867,75 @@ async def qsar_model_delete(model_id: str):
                 raise HTTPException(
                     status_code=404, detail=f"Model {model_id} not found"
                 )
+            raise HTTPException(status_code=500, detail=str(e))
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/qsar/validate/y-scrambling")
+async def qsar_y_scrambling(
+    smiles_list: List[str],
+    activity_column: str,
+    model_type: str = "RandomForest",
+    n_iterations: int = 10,
+    cv_folds: int = 5,
+):
+    async with httpx.AsyncClient(timeout=300.0) as client:
+        try:
+            response = await client.post(
+                f"{QSAR_SERVICE_URL}/validate/y-scrambling",
+                json={
+                    "smiles_list": smiles_list,
+                    "activity_column": activity_column,
+                    "model_type": model_type,
+                    "n_iterations": n_iterations,
+                    "cv_folds": cv_folds,
+                },
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 400:
+                raise HTTPException(status_code=400, detail=str(e))
+            raise HTTPException(status_code=500, detail=str(e))
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/qsar/validate/shap/{model_id}")
+async def qsar_shap_importance(model_id: str, top_n: int = 20):
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            response = await client.get(
+                f"{QSAR_SERVICE_URL}/validate/shap/{model_id}",
+                params={"top_n": top_n},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 400:
+                raise HTTPException(status_code=400, detail=str(e))
+            if e.response.status_code == 404:
+                raise HTTPException(status_code=404, detail=f"Model {model_id} not found")
+            raise HTTPException(status_code=500, detail=str(e))
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/qsar/validate/williams-plot/{model_id}")
+async def qsar_williams_plot(model_id: str):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.get(
+                f"{QSAR_SERVICE_URL}/validate/williams-plot/{model_id}",
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 400:
+                raise HTTPException(status_code=400, detail=str(e))
+            if e.response.status_code == 404:
+                raise HTTPException(status_code=404, detail=f"Model {model_id} not found")
             raise HTTPException(status_code=500, detail=str(e))
         except httpx.HTTPError as e:
             raise HTTPException(status_code=500, detail=str(e))
@@ -2483,12 +2685,26 @@ async def get_metrics():
         ]
         healthy_services = len([s for s in docker_services if r.exists(f"health:{s}")])
 
+        redis_mem_bytes = info.get("used_memory", 0)
+
         metrics_text = f"""# HELP docking_jobs_total Total number of jobs
 # TYPE docking_jobs_total gauge
 docking_jobs_total {total_jobs}
+
+# HELP docking_jobs_running Number of running jobs
+# TYPE docking_jobs_running gauge
 docking_jobs_running {running}
+
+# HELP docking_jobs_completed Number of completed jobs
+# TYPE docking_jobs_completed gauge
 docking_jobs_completed {completed}
+
+# HELP docking_jobs_failed Number of failed jobs
+# TYPE docking_jobs_failed gauge
 docking_jobs_failed {failed}
+
+# HELP docking_jobs_pending Number of pending jobs
+# TYPE docking_jobs_pending gauge
 docking_jobs_pending {pending}
 
 # HELP docking_services_healthy Number of healthy services
@@ -2499,9 +2715,9 @@ docking_services_healthy {healthy_services}
 # TYPE redis_connected_clients gauge
 redis_connected_clients {info.get("connected_clients", 0)}
 
-# HELP redis_used_memory_human Redis memory usage
-# TYPE redis_used_memory_human gauge
-redis_used_memory_human {info.get("used_memory_human", "0")}
+# HELP redis_used_memory_bytes Redis memory usage in bytes
+# TYPE redis_used_memory_bytes gauge
+redis_used_memory_bytes {redis_mem_bytes}
 """
         return Response(content=metrics_text, media_type="text/plain")
     except Exception as e:

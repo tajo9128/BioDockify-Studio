@@ -343,4 +343,5 @@ def descriptors_upload(
         "nan_count": int(nan_count),
         "failed_smiles": failed_smiles,
         "failed_count": len(failed_smiles),
+        "valid_smiles": valid_smiles,
     }

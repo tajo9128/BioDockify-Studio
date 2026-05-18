@@ -6,8 +6,11 @@ export async function createJob(job: JobRequest): Promise<{ job_uuid: string; st
   return data
 }
 
-export async function getJobs(limit = 50): Promise<{ jobs: Job[] }> {
-  const { data } = await apiClient.get('/jobs', { params: { limit } })
+export async function getJobs(limit = 50, jobType?: string, status?: string): Promise<{ jobs: Job[]; count: number }> {
+  const params: Record<string, any> = { limit }
+  if (jobType) params.job_type = jobType
+  if (status) params.status = status
+  const { data } = await apiClient.get('/jobs', { params })
   return data
 }
 
@@ -45,5 +48,15 @@ export async function getJobInteractions(
 
 export async function deleteJob(jobUuid: string): Promise<{ status: string }> {
   const { data } = await apiClient.delete(`/jobs/${jobUuid}`)
+  return data
+}
+
+export async function getQSARTrainingJobs(): Promise<{ jobs: any[]; count: number }> {
+  const { data } = await apiClient.get('/qsar/train/jobs')
+  return data
+}
+
+export async function getQSARTrainingStatus(jobId: string): Promise<any> {
+  const { data } = await apiClient.get(`/qsar/train/${jobId}/status`)
   return data
 }

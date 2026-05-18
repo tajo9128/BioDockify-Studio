@@ -203,9 +203,53 @@ def _run_training(job_id: str, train_data: TrainRequest):
             model_params=train_data.model_params,
         )
         _set_job_status(job_id, "completed", result=result)
+
+        # Persist to filesystem for long-term storage beyond Redis TTL
+        try:
+            import json
+            from pathlib import Path
+            persist_dir = STORAGE_DIR / "training_jobs"
+            persist_dir.mkdir(parents=True, exist_ok=True)
+            persist_path = persist_dir / f"{job_id}.json"
+            persist_data = {
+                "job_id": job_id,
+                "status": "completed",
+                "model_type": train_data.model_type,
+                "model_name": train_data.model_name,
+                "activity_column": train_data.activity_column,
+                "descriptor_groups": train_data.descriptor_groups,
+                "cv_folds": train_data.cv_folds,
+                "result": result,
+                "created_at": datetime.now().isoformat(),
+            }
+            with open(persist_path, "w") as f:
+                json.dump(persist_data, f, indent=2)
+            logger.info(f"Persisted training job {job_id} to {persist_path}")
+        except Exception as e:
+            logger.error(f"Failed to persist training job {job_id}: {e}")
     except Exception as e:
         logger.error(f"Training job {job_id} failed: {e}")
         _set_job_status(job_id, "failed", error=str(e))
+
+        # Persist failure too
+        try:
+            import json
+            from pathlib import Path
+            persist_dir = STORAGE_DIR / "training_jobs"
+            persist_dir.mkdir(parents=True, exist_ok=True)
+            persist_path = persist_dir / f"{job_id}.json"
+            persist_data = {
+                "job_id": job_id,
+                "status": "failed",
+                "error": str(e),
+                "model_type": train_data.model_type,
+                "model_name": train_data.model_name,
+                "created_at": datetime.now().isoformat(),
+            }
+            with open(persist_path, "w") as f:
+                json.dump(persist_data, f, indent=2)
+        except Exception:
+            pass
 
 
 @app.post("/train")
@@ -222,31 +266,56 @@ def train(
 
 @app.get("/train/{job_id}/status")
 def training_status(job_id: str):
-    """Poll training job status"""
-    if not redis_client:
-        raise HTTPException(status_code=503, detail="Redis not available")
+    """Poll training job status — Redis first, then filesystem fallback"""
     import json
+    from pathlib import Path
 
-    data = redis_client.get(f"qsar_job:{job_id}")
-    if data is None:
-        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
-    return json.loads(data)
+    # Try Redis first
+    if redis_client:
+        data = redis_client.get(f"qsar_job:{job_id}")
+        if data:
+            return json.loads(data)
+
+    # Fallback to filesystem
+    try:
+        persist_path = STORAGE_DIR / "training_jobs" / f"{job_id}.json"
+        if persist_path.exists():
+            with open(persist_path, "r") as f:
+                return json.load(f)
+    except Exception as e:
+        logger.error(f"Filesystem fallback failed: {e}")
+
+    raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
 
 @app.get("/train/{job_id}/results")
 def training_results(job_id: str):
-    """Fetch completed training results"""
-    if not redis_client:
-        raise HTTPException(status_code=503, detail="Redis not available")
+    """Fetch completed training results — Redis first, then filesystem fallback"""
     import json
+    from pathlib import Path
 
-    data = redis_client.get(f"qsar_job:{job_id}")
-    if data is None:
-        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
-    result = json.loads(data)
-    if result["status"] != "completed":
-        return {"status": result["status"], "error": result.get("error")}
-    return {"status": "completed", "result": result.get("result")}
+    # Try Redis first
+    if redis_client:
+        data = redis_client.get(f"qsar_job:{job_id}")
+        if data:
+            result = json.loads(data)
+            if result["status"] != "completed":
+                return {"status": result["status"], "error": result.get("error")}
+            return {"status": "completed", "result": result.get("result")}
+
+    # Fallback to filesystem
+    try:
+        persist_path = STORAGE_DIR / "training_jobs" / f"{job_id}.json"
+        if persist_path.exists():
+            with open(persist_path, "r") as f:
+                data = json.load(f)
+            if data.get("status") == "completed":
+                return {"status": "completed", "result": data.get("result")}
+            return {"status": data.get("status", "unknown"), "error": data.get("error")}
+    except Exception as e:
+        logger.error(f"Filesystem fallback failed: {e}")
+
+    raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
 
 @app.post("/predict")
@@ -279,6 +348,32 @@ def predict_batch_endpoint(request: BatchPredictRequest):
 def models_list():
     """List all saved models"""
     return {"models": list_models()}
+
+
+@app.get("/train/jobs")
+def list_training_jobs():
+    """List all training jobs from filesystem persistence"""
+    import json
+    from pathlib import Path
+
+    jobs = []
+    persist_dir = STORAGE_DIR / "training_jobs"
+    if persist_dir.exists():
+        for p in sorted(persist_dir.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
+            try:
+                with open(p, "r") as f:
+                    data = json.load(f)
+                jobs.append({
+                    "job_id": data.get("job_id"),
+                    "status": data.get("status"),
+                    "model_type": data.get("model_type"),
+                    "model_name": data.get("model_name"),
+                    "created_at": data.get("created_at"),
+                    "metrics": data.get("result", {}).get("metrics") if data.get("status") == "completed" else None,
+                })
+            except Exception:
+                pass
+    return {"jobs": jobs, "count": len(jobs)}
 
 
 @app.get("/models/{model_id}")

@@ -31,7 +31,9 @@ def init_db():
             files_json TEXT,
             log_text TEXT,
             receptor_name TEXT,
-            ligand_name TEXT
+            ligand_name TEXT,
+            error_text TEXT,
+            metadata_json TEXT
         )
     """)
 
@@ -41,6 +43,8 @@ def init_db():
         ("log_text", "TEXT"),
         ("receptor_name", "TEXT"),
         ("ligand_name", "TEXT"),
+        ("error_text", "TEXT"),
+        ("metadata_json", "TEXT"),
     ]:
         try:
             cur.execute(f"ALTER TABLE jobs ADD COLUMN {col_def[0]} {col_def[1]}")
@@ -111,7 +115,8 @@ def create_job(job_uuid: str, job_name: str, receptor_file: str, ligand_file: st
 
 
 def update_job_status(job_uuid: str, status: str, binding_energy: Optional[float] = None, 
-                     confidence_score: Optional[float] = None) -> bool:
+                      confidence_score: Optional[float] = None, error: Optional[str] = None,
+                      metadata: Optional[Dict[str, Any]] = None) -> bool:
     """Update job status"""
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -133,6 +138,15 @@ def update_job_status(job_uuid: str, status: str, binding_energy: Optional[float
         if confidence_score is not None:
             query += ", confidence_score = ?"
             params.append(confidence_score)
+        
+        if error is not None:
+            query += ", error_text = ?"
+            params.append(error[:4096])  # cap at 4KB
+        
+        if metadata is not None:
+            import json
+            query += ", metadata_json = ?"
+            params.append(json.dumps(metadata))
         
         query += " WHERE job_uuid = ?"
         params.append(job_uuid)
@@ -206,6 +220,7 @@ _JOB_COLUMNS = [
     'id', 'job_uuid', 'job_name', 'receptor_file', 'ligand_file', 'status',
     'created_at', 'completed_at', 'binding_energy', 'confidence_score', 'engine',
     'files_json', 'log_text', 'receptor_name', 'ligand_name',
+    'error_text', 'metadata_json',
 ]
 
 

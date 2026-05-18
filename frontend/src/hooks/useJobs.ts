@@ -1,11 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getJobs, deleteJob, getJob, getJobResults, getJobInteractions } from '@/api/jobs'
+import { getJobs, deleteJob, getJob, getJobResults, getJobInteractions, getQSARTrainingJobs } from '@/api/jobs'
 
-export function useJobs(limit = 50) {
+export function useJobs(limit = 50, jobType?: string, status?: string) {
   return useQuery({
-    queryKey: ['jobs', limit],
-    queryFn: () => getJobs(limit),
+    queryKey: ['jobs', limit, jobType, status],
+    queryFn: () => getJobs(limit, jobType, status),
     refetchInterval: 10000,
+  })
+}
+
+export function useQSARTrainingJobs() {
+  return useQuery({
+    queryKey: ['qsar-training-jobs'],
+    queryFn: () => getQSARTrainingJobs(),
+    refetchInterval: 15000,
   })
 }
 

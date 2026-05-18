@@ -56,16 +56,55 @@ def get_atoms_from_file(pdb_path: str) -> np.ndarray:
         return np.array([])
 
 
+def _kabsch_rmsd(P: np.ndarray, Q: np.ndarray) -> float:
+    """
+    Calculate RMSD after optimal superposition using the Kabsch algorithm.
+    
+    Args:
+        P: Reference coordinates (N, 3)
+        Q: Mobile coordinates (N, 3)
+    
+    Returns:
+        RMSD in Angstroms after optimal rotation/translation
+    """
+    if len(P) != len(Q) or len(P) == 0:
+        return float('inf')
+    
+    # Center both structures
+    P_centered = P - P.mean(axis=0)
+    Q_centered = Q - Q.mean(axis=0)
+    
+    # Covariance matrix
+    C = Q_centered.T @ P_centered
+    
+    # SVD
+    V, S, Wt = np.linalg.svd(C)
+    
+    # Ensure right-handed coordinate system
+    d = np.sign(np.linalg.det(V @ Wt))
+    S_modified = np.diag([1, 1, d])
+    
+    # Optimal rotation matrix
+    U = V @ S_modified @ Wt
+    
+    # Rotate Q
+    Q_rotated = Q_centered @ U
+    
+    # RMSD
+    rmsd = np.sqrt(np.sum((P_centered - Q_rotated) ** 2) / len(P))
+    return float(rmsd)
+
+
 def calculate_rmsd(pdb1_data: str, pdb2_data: str) -> float:
     """
-    Calculate RMSD between two PDB structures.
+    Calculate RMSD between two PDB structures using Kabsch algorithm.
     
     Args:
         pdb1_data: First PDB structure (string)
         pdb2_data: Second PDB structure (string)
     
     Returns:
-        RMSD value in Angstroms
+        RMSD value in Angstroms after optimal superposition
     """
     atoms1 = get_atoms_from_pdb(pdb1_data)
     atoms2 = get_atoms_from_pdb(pdb2_data)
@@ -75,15 +114,18 @@ def calculate_rmsd(pdb1_data: str, pdb2_data: str) -> float:
         return -1.0
     
     min_len = min(len(atoms1), len(atoms2))
+    if min_len < 3:
+        logger.warning("Too few atoms for RMSD calculation")
+        return -1.0
+    
     atoms1 = atoms1[:min_len]
     atoms2 = atoms2[:min_len]
     
-    rmsd = float(np.sqrt(((atoms1 - atoms2) ** 2).sum() / min_len))
-    return rmsd
+    return _kabsch_rmsd(atoms1, atoms2)
 
 
 def calculate_rmsd_files(pdb1_path: str, pdb2_path: str) -> float:
-    """Calculate RMSD between two PDB files"""
+    """Calculate RMSD between two PDB files using Kabsch algorithm"""
     atoms1 = get_atoms_from_file(pdb1_path)
     atoms2 = get_atoms_from_file(pdb2_path)
     
@@ -91,10 +133,13 @@ def calculate_rmsd_files(pdb1_path: str, pdb2_path: str) -> float:
         return -1.0
     
     min_len = min(len(atoms1), len(atoms2))
+    if min_len < 3:
+        return -1.0
+    
     atoms1 = atoms1[:min_len]
     atoms2 = atoms2[:min_len]
     
-    return float(np.sqrt(((atoms1 - atoms2) ** 2).sum() / min_len))
+    return _kabsch_rmsd(atoms1, atoms2)
 
 
 def detect_hbonds(receptor_atoms: np.ndarray, ligand_atoms: np.ndarray, 
@@ -447,32 +492,34 @@ def calculate_protein_ligand_interactions(
                         })
 
         if resname in positive_residues:
-            for lig_atom in ligand_atoms:
-                if lig_atom['formal_charge'] < 0:
-                    dist = np.linalg.norm(np.array(res_atom['pos']) - np.array(lig_atom['pos']))
-                    if dist < cutoff:
-                        interactions['pi_cation'].append({
-                            'residue': resname,
-                            'resseq': resseq,
-                            'chain': chain,
-                            'ligand_idx': lig_atom['idx'],
-                            'distance': round(dist, 2),
-                            'type': 'cation_anion'
-                        })
+            for res_atom in res_data['atoms']:
+                for lig_atom in ligand_atoms:
+                    if lig_atom['formal_charge'] < 0:
+                        dist = np.linalg.norm(np.array(res_atom['pos']) - np.array(lig_atom['pos']))
+                        if dist < cutoff:
+                            interactions['pi_cation'].append({
+                                'residue': resname,
+                                'resseq': resseq,
+                                'chain': chain,
+                                'ligand_idx': lig_atom['idx'],
+                                'distance': round(dist, 2),
+                                'type': 'cation_anion'
+                            })
 
         if resname in negative_residues:
-            for lig_atom in ligand_atoms:
-                if lig_atom['formal_charge'] > 0:
-                    dist = np.linalg.norm(np.array(res_atom['pos']) - np.array(lig_atom['pos']))
-                    if dist < cutoff:
-                        interactions['salt_bridges'].append({
-                            'residue': resname,
-                            'resseq': resseq,
-                            'chain': chain,
-                            'ligand_idx': lig_atom['idx'],
-                            'distance': round(dist, 2),
-                            'type': 'salt_bridge'
-                        })
+            for res_atom in res_data['atoms']:
+                for lig_atom in ligand_atoms:
+                    if lig_atom['formal_charge'] > 0:
+                        dist = np.linalg.norm(np.array(res_atom['pos']) - np.array(lig_atom['pos']))
+                        if dist < cutoff:
+                            interactions['salt_bridges'].append({
+                                'residue': resname,
+                                'resseq': resseq,
+                                'chain': chain,
+                                'ligand_idx': lig_atom['idx'],
+                                'distance': round(dist, 2),
+                                'type': 'salt_bridge'
+                            })
 
     binding_site = set()
     for lig_atom in ligand_atoms:
