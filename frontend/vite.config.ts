@@ -117,6 +117,42 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/brain/, ''),
       },
+      '/commander': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/system': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/md': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/qsar': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/admet': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/interactions': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/crew': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/settings': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/platform': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
 })

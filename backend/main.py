@@ -61,7 +61,7 @@ logger.info("Docking Studio backend initialized")
 app = FastAPI(
     title="BioDockify Studio AI API",
     description="Backend API for BioDockify Studio AI - Autonomous Drug Discovery Platform",
-    version="4.4.4",
+    version="4.4.6",
 )
 
 app.add_middleware(
@@ -929,6 +929,103 @@ def security_issues(scan_type: Optional[str] = None):
         monitor = SecurityMonitor()
         issues = monitor.get_security_issues(scan_type)
         return {"issues": issues}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- NanoBot Commander Endpoints ---
+
+class CommanderRequestModel(BaseModel):
+    query: str
+    conversation_id: Optional[str] = None
+    context: Dict[str, Any] = {}
+
+
+@app.post("/commander/execute")
+def commander_execute(req: CommanderRequestModel):
+    """Execute a command through the NanoBot Commander."""
+    try:
+        from crew.commander import get_commander
+        from crew.types import CommanderRequest
+
+        commander = get_commander()
+        request = CommanderRequest(
+            query=req.query,
+            conversation_id=req.conversation_id,
+            context=req.context
+        )
+        response = commander.execute(request)
+        return {
+            "response": response.response,
+            "status": response.status,
+            "tasks": response.tasks,
+            "workers_used": response.workers_used,
+            "execution_time_seconds": response.execution_time_seconds,
+            "conversation_id": response.conversation_id,
+            "recommendations": response.recommendations,
+        }
+    except Exception as e:
+        logger.error(f"Commander execute failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/commander/task/{task_id}")
+def commander_task_status(task_id: str):
+    """Get status of a specific task."""
+    try:
+        from crew.commander import get_commander
+        commander = get_commander()
+        status = commander.get_task_status(task_id)
+        if status:
+            return status
+        raise HTTPException(status_code=404, detail="Task not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/commander/task/{task_id}/cancel")
+def commander_cancel_task(task_id: str):
+    """Cancel a running task."""
+    try:
+        from crew.commander import get_commander
+        commander = get_commander()
+        cancelled = commander.cancel_task(task_id)
+        return {"cancelled": cancelled, "task_id": task_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/commander/workers")
+def commander_workers():
+    """Get all worker status."""
+    try:
+        from crew.commander import get_commander
+        commander = get_commander()
+        return commander.get_worker_status()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/commander/history")
+def commander_history(limit: int = 20):
+    """Get task execution history."""
+    try:
+        from crew.commander import get_commander
+        commander = get_commander()
+        return commander.get_task_history(limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/commander/conversation/{conv_id}")
+def commander_conversation(conv_id: str):
+    """Get conversation history."""
+    try:
+        from crew.commander import get_commander
+        commander = get_commander()
+        return commander.get_conversation(conv_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

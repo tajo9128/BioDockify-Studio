@@ -73,3 +73,62 @@ export async function orchestrateCrew(inputs: Record<string, any>): Promise<{ jo
   const { data } = await apiClient.post('/crew/orchestrate', { inputs })
   return data
 }
+
+// --- Commander API ---
+
+export interface CommanderTask {
+  id: string
+  worker: string
+  status: string
+}
+
+export interface CommanderResponse {
+  response: string
+  status: string
+  tasks: CommanderTask[]
+  workers_used: string[]
+  execution_time_seconds: number
+  conversation_id: string
+  recommendations: string[]
+}
+
+export interface WorkerStatus {
+  load: number
+  max_concurrent: number
+  available: boolean
+  capabilities: string[]
+}
+
+export async function executeCommand(query: string, conversationId?: string): Promise<CommanderResponse> {
+  const { data } = await apiClient.post('/commander/execute', {
+    query,
+    conversation_id: conversationId,
+    context: {},
+  })
+  return data
+}
+
+export async function getTaskStatus(taskId: string) {
+  const { data } = await apiClient.get(`/commander/task/${taskId}`)
+  return data
+}
+
+export async function cancelTask(taskId: string) {
+  const { data } = await apiClient.post(`/commander/task/${taskId}/cancel`)
+  return data
+}
+
+export async function getWorkerStatus(): Promise<Record<string, WorkerStatus>> {
+  const { data } = await apiClient.get('/commander/workers')
+  return data
+}
+
+export async function getCommanderHistory(limit = 20) {
+  const { data } = await apiClient.get(`/commander/history?limit=${limit}`)
+  return data
+}
+
+export async function getConversation(convId: string) {
+  const { data } = await apiClient.get(`/commander/conversation/${convId}`)
+  return data
+}

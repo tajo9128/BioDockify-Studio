@@ -1,7 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Card, Button, Badge } from '@/components/ui'
 import { sendChat, getChatStatus, getPlatformContext } from '@/api/chat'
+import { executeCommand, cancelTask, getWorkerStatus } from '@/api/crewai'
 import type { PlatformContext } from '@/lib/types'
+import type { CommanderResponse } from '@/api/crewai'
 
 interface Message {
   id: string
@@ -9,6 +12,9 @@ interface Message {
   content: string
   timestamp: Date
   toolsUsed?: string[]
+  tasks?: Array<{ id: string; worker: string; status: string }>
+  workersUsed?: string[]
+  recommendations?: string[]
 }
 
 const SERVICE_CONFIG: Record<string, { label: string; icon: string }> = {
@@ -32,6 +38,8 @@ const QUICK_CMDS = [
   { label: '💫 MD Validation',    text: 'How do I validate my top docking pose with molecular dynamics? What RMSD thresholds should I use?' },
   { label: '🧲 Pharmacophore',    text: 'Generate a pharmacophore model from my receptor-ligand complex and screen a compound library' },
   { label: '🛡️ Platform Health',  text: 'Check the health of all 9 platform services and tell me if anything needs attention' },
+  { label: '🔒 Security Scan',    text: 'Run a full security scan and report vulnerabilities' },
+  { label: '📊 System Status',    text: 'Check system health and resource usage' },
 ]
 
 export function AIAssistant() {
@@ -45,8 +53,16 @@ export function AIAssistant() {
   const [selectedProvider, setSelectedProvider] = useState<'ollama' | 'paid'>(() => {
     return (localStorage.getItem('biodockify_provider_pref') as 'ollama' | 'paid') ?? 'ollama'
   })
+  const [commanderMode, setCommanderMode] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const { data: workers } = useQuery({
+    queryKey: ['commander-workers'],
+    queryFn: getWorkerStatus,
+    refetchInterval: 15000,
+    enabled: commanderMode,
+  })
 
   const handleProviderSwitch = (p: 'ollama' | 'paid') => {
     setSelectedProvider(p)
@@ -86,21 +102,47 @@ export function AIAssistant() {
     setLoading(true)
     setError(null)
     try {
-      const res = await sendChat(txt, convId, selectedProvider)
-      if (res.conversation_id) setConvId(res.conversation_id)
-      setMessages(p => [...p, {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: res.response || 'No response.',
-        timestamp: new Date(),
-        toolsUsed: res.tools_used,
-      }])
-      setProviderStatus({ provider: res.provider || 'unknown', available: res.available !== false })
+      if (commanderMode) {
+        const res: CommanderResponse = await executeCommand(txt, convId)
+        if (res.conversation_id) setConvId(res.conversation_id)
+        setMessages(p => [...p, {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: res.response || 'No response.',
+          timestamp: new Date(),
+          workersUsed: res.workers_used,
+          tasks: res.tasks,
+          recommendations: res.recommendations,
+        }])
+      } else {
+        const res = await sendChat(txt, convId, selectedProvider)
+        if (res.conversation_id) setConvId(res.conversation_id)
+        setMessages(p => [...p, {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: res.response || 'No response.',
+          timestamp: new Date(),
+          toolsUsed: res.tools_used,
+        }])
+        setProviderStatus({ provider: res.provider || 'unknown', available: res.available !== false })
+      }
     } catch (e: any) {
       const msg = e?.response?.data?.detail || e?.message || 'Connection failed. Check LLM settings.'
       setError(msg)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleCancel = async (taskId: string) => {
+    try {
+      await cancelTask(taskId)
+      setMessages(prev => prev.map(m => ({
+        ...m,
+        tasks: m.tasks?.map(t => t.id === taskId ? { ...t, status: 'cancelled' } : t)
+      })))
+    } catch (error) {
+      console.error('Failed to cancel task:', error)
     }
   }
 
@@ -113,9 +155,9 @@ export function AIAssistant() {
     .replace(/^## (.+)$/gm, '<div style="font-weight:700;font-size:1.05em;margin-top:10px">$1</div>')
     .replace(/^- (.+)$/gm, '<div style="margin-left:12px">• $1</div>')
 
-  const activeJobs = ctx?.recent_jobs?.filter(j => ['running','queued','pending'].includes(j.status?.toLowerCase())) ?? []
-  const completedJobs = ctx?.recent_jobs?.filter(j => j.status?.toLowerCase() === 'completed') ?? []
-  const failedJobs = ctx?.recent_jobs?.filter(j => j.status?.toLowerCase() === 'failed') ?? []
+  const activeJobs = (ctx?.recent_jobs ?? []).filter(j => ['running','queued','pending'].includes(j.status?.toLowerCase() ?? ''))
+  const completedJobs = (ctx?.recent_jobs ?? []).filter(j => j.status?.toLowerCase() === 'completed')
+  const failedJobs = (ctx?.recent_jobs ?? []).filter(j => j.status?.toLowerCase() === 'failed')
   const healthyCount = Object.values(ctx?.services ?? {}).filter(v => v === 'healthy').length
   const totalSvc = Object.keys(SERVICE_CONFIG).length
 
@@ -136,13 +178,29 @@ export function AIAssistant() {
               )}
             </h1>
             <p className="text-xs text-text-secondary">
-              v4.4.2 · {totalSvc} services · {ctx?.tools_count ?? 0} AI tools
+              v4.4.6 · {totalSvc} services · {ctx?.tools_count ?? 0} AI tools · {commanderMode ? 'Commander Mode' : 'Chat Mode'}
               {ctx?.provider && ctx.provider !== 'unknown' ? ` · ${ctx.provider}` : ''}
               {ctx?.model && ctx.model !== 'unknown' ? ` / ${ctx.model}` : ''}
             </p>
           </div>
         </div>
         <div className="flex gap-2 items-center">
+          <Button
+            variant={commanderMode ? 'primary' : 'outline'}
+            size="sm"
+            onClick={() => setCommanderMode(true)}
+            className="text-xs"
+          >
+            Commander
+          </Button>
+          <Button
+            variant={!commanderMode ? 'primary' : 'outline'}
+            size="sm"
+            onClick={() => setCommanderMode(false)}
+            className="text-xs"
+          >
+            Chat
+          </Button>
           <Badge variant="success">Soul</Badge>
           <Badge variant="info">Memory</Badge>
           <Badge variant={healthyCount >= 7 ? 'success' : healthyCount >= 4 ? 'warning' : 'error'}>
@@ -256,6 +314,22 @@ export function AIAssistant() {
             </div>
           </Card>
 
+          {/* Worker status (Commander mode) */}
+          {commanderMode && workers && (
+            <Card className="p-3">
+              <div className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">🤖 Workers</div>
+              <div className="space-y-1">
+                {Object.entries(workers).map(([name, w]) => (
+                  <div key={name} className="flex items-center gap-1.5 py-0.5">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${w.available ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                    <span className="text-xs text-text-primary truncate flex-1">{name.replace('_crew', '').replace('_', ' ')}</span>
+                    <span className="text-xs text-text-tertiary">{w.load}/{w.max_concurrent}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
           {/* Quick commands */}
           <Card className="p-3">
             <div className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">⚡ Quick Commands</div>
@@ -336,10 +410,10 @@ export function AIAssistant() {
                 <div className="text-5xl mb-3">🧬</div>
                 <h2 className="text-lg font-bold text-text-primary mb-1">BioDockify AI Commander</h2>
                 <p className="text-sm text-text-secondary mb-1 max-w-sm">
-                  Central intelligence of BioDockify Studio v4.4.2
+                  Central intelligence of BioDockify Studio v4.4.6
                 </p>
                 <p className="text-xs text-text-tertiary mb-6 max-w-xs">
-                  I command all sub-agents, monitor all jobs, and guide you through the complete drug discovery pipeline.
+                  Multi-agent orchestration system. I decompose tasks, dispatch specialized worker crews, and synthesize results.
                 </p>
                 <div className="grid grid-cols-3 gap-2 max-w-lg text-left w-full">
                   {[
@@ -368,6 +442,38 @@ export function AIAssistant() {
                       ? 'bg-gradient-to-r from-purple-600 to-blue-500 text-white'
                       : 'bg-surface-secondary text-text-primary'
                   }`}>
+                    {msg.role === 'assistant' && msg.workersUsed && msg.workersUsed.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1 mb-2">
+                        <span className="text-xs opacity-60">Workers:</span>
+                        {msg.workersUsed.map(w => (
+                          <Badge key={w} variant="info">{w.replace('_crew', '').replace('_', ' ')}</Badge>
+                        ))}
+                      </div>
+                    )}
+                    {msg.role === 'assistant' && msg.tasks && msg.tasks.length > 0 && (
+                      <div className="mb-2 space-y-1">
+                        <span className="text-xs opacity-60">Tasks:</span>
+                        {msg.tasks.map(t => (
+                          <div key={t.id} className="flex items-center gap-2 text-xs">
+                            <span className={`w-1.5 h-1.5 rounded-full ${
+                              t.status === 'completed' ? 'bg-green-500' :
+                              t.status === 'running' ? 'bg-yellow-500 animate-pulse' :
+                              t.status === 'cancelled' ? 'bg-gray-500' : 'bg-red-500'
+                            }`} />
+                            <span className="opacity-70">{t.worker.replace('_crew', '').replace('_', ' ')}</span>
+                            <span className="opacity-50">— {t.status}</span>
+                            {(t.status === 'running' || t.status === 'pending') && (
+                              <button
+                                className="text-red-400 hover:text-red-300 text-xs ml-auto"
+                                onClick={() => handleCancel(t.id)}
+                              >
+                                Cancel
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {msg.role === 'assistant' && msg.toolsUsed && msg.toolsUsed.length > 0 && (
                       <div className="flex flex-wrap items-center gap-1 mb-2">
                         <span className="text-xs opacity-60">Tools used:</span>
@@ -380,6 +486,14 @@ export function AIAssistant() {
                       className="text-sm whitespace-pre-wrap"
                       dangerouslySetInnerHTML={{ __html: fmt(msg.content) }}
                     />
+                    {msg.role === 'assistant' && msg.recommendations && msg.recommendations.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-border-light/30">
+                        <span className="text-xs opacity-60">Recommendations:</span>
+                        {msg.recommendations.map((r, i) => (
+                          <p key={i} className="text-xs text-text-tertiary mt-0.5">• {r}</p>
+                        ))}
+                      </div>
+                    )}
                     <p className={`text-xs mt-1.5 ${msg.role === 'user' ? 'text-white/60' : 'text-text-tertiary'}`}>
                       {msg.timestamp.toLocaleTimeString()}
                     </p>
@@ -419,7 +533,7 @@ export function AIAssistant() {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-                placeholder="Command — docking, QSAR, MD, pharmacophore, analysis, ADMET…"
+                placeholder={commanderMode ? "Command — docking, QSAR, MD, security scan, system health..." : "Chat with AI assistant..."}
                 className="flex-1 px-4 py-2.5 bg-white border border-border-light rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                 disabled={loading}
               />
@@ -432,7 +546,7 @@ export function AIAssistant() {
               </Button>
             </div>
             <p className="text-xs text-text-tertiary mt-1 text-center">
-              Enter to send · {ctx?.tools_count ?? 0} tools available · chain-of-thought reasoning
+              {commanderMode ? 'Commander mode: tasks dispatched to specialized worker crews' : 'Chat mode: direct LLM conversation'} · Enter to send
             </p>
           </div>
         </Card>
