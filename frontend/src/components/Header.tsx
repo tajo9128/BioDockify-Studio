@@ -21,7 +21,7 @@ export function Header() {
   }
   
   return (
-    <header className={`relative shadow-sm transition-all ${
+    <header className={`shadow-sm transition-all ${
       isDark ? 'bg-gray-800 text-white' : 'bg-white text-gray-800 border-b border-gray-200'
     } ${collapsed ? 'h-10' : 'h-14'}`}>
       <div className="flex items-center justify-between px-3 h-full">
