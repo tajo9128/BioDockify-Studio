@@ -301,8 +301,8 @@ export function Settings() {
   const providerInfo = AI_PROVIDERS.find(p => p.value === llmConfig.provider)
 
   return (
-    <div className={`min-h-full p-6 ${isDark ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
-      <div className="max-w-5xl mx-auto">
+    <div className={`min-h-screen ${isDark ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
+      <div className="max-w-5xl mx-auto p-6">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-2xl font-bold">Settings</h1>

@@ -162,7 +162,7 @@ export function AIAssistant() {
   const totalSvc = Object.keys(SERVICE_CONFIG).length
 
   return (
-    <div className="h-full flex flex-col p-3 gap-2 min-h-0">
+    <div className="h-full flex flex-col p-4 gap-3 min-h-0">
 
       {/* ── Header ── */}
       <div className="flex items-center justify-between shrink-0">
