@@ -13,9 +13,9 @@ export function Layout() {
       isDark ? 'bg-gray-900' : 'bg-gray-100'
     }`}>
       <Header />
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         <Sidebar />
-        <main className={`flex-1 overflow-y-auto transition-colors ${
+        <main className={`flex-1 min-h-0 overflow-y-auto transition-colors ${
           isDark ? 'bg-gray-800' : 'bg-gray-50'
         }`}>
           <Outlet />
