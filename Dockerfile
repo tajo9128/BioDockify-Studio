@@ -62,7 +62,7 @@ RUN pip install --no-cache-dir --no-deps -r /app/backend/requirements.txt
 COPY backend/ /app/backend/
 
 # Copy built frontend from builder
-COPY --from=frontend-builder /app/frontend/dist /app/backend/static/
+COPY --from=frontend-builder /app/backend/static /app/backend/static/
 
 RUN mkdir -p /app/backend/storage /app/backend/static/assets
 
