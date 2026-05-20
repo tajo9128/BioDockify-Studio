@@ -15,7 +15,7 @@ export function StatusBar() {
   }, [])
   
   return (
-    <footer className={`px-4 py-1.5 text-xs flex items-center justify-between transition-colors ${
+    <footer className={`shrink-0 px-4 py-1.5 text-xs flex items-center justify-between transition-colors ${
       isDark 
         ? 'bg-gray-800 text-gray-400 border-t border-gray-700' 
         : 'bg-white text-gray-500 border-t border-gray-200'

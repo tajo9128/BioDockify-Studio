@@ -9,7 +9,7 @@ export function Layout() {
   const isDark = theme === 'dark'
   
   return (
-    <div className={`h-screen w-screen flex flex-col overflow-hidden transition-colors ${
+    <div className={`h-full w-full flex flex-col overflow-hidden transition-colors ${
       isDark ? 'bg-gray-900' : 'bg-gray-100'
     }`}>
       <Header />

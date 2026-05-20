@@ -29,7 +29,7 @@ export function Sidebar() {
   const isDark = theme === 'dark'
 
   return (
-    <aside className={`w-56 flex flex-col shadow-sm transition-colors ${
+    <aside className={`shrink-0 w-56 flex flex-col overflow-y-auto shadow-sm transition-colors ${
       isDark
         ? 'bg-gray-900 text-white border-r border-gray-700'
         : 'bg-white text-gray-800 border-r border-gray-200'
