@@ -27,6 +27,18 @@ export default {
         error: {
           DEFAULT: '#dc2626',
         },
+        text: {
+          primary: 'var(--text-primary)',
+          secondary: 'var(--text-secondary)',
+          tertiary: 'var(--text-tertiary)',
+        },
+        surface: {
+          secondary: 'var(--surface-secondary)',
+          tertiary: 'var(--surface-tertiary)',
+        },
+        border: {
+          light: 'var(--border-light)',
+        },
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],

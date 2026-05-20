@@ -20,6 +20,24 @@ body {
   color: #1e293b;
 }
 
+:root {
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --text-tertiary: #94a3b8;
+  --surface-secondary: #f8fafc;
+  --surface-tertiary: #f1f5f9;
+  --border-light: #e2e8f0;
+}
+
+.dark {
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-tertiary: #64748b;
+  --surface-secondary: #1e293b;
+  --surface-tertiary: #334155;
+  --border-light: #334155;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;

@@ -53,19 +53,19 @@ export default function AIAssistant() {
   }
 
   return (
-    <div className="page">
-      <div className="page-header">
-        <h2>BioDockify AI</h2>
-        <p>Ask questions about molecular docking, simulations, and more</p>
+    <div className="h-full flex flex-col p-6 overflow-hidden">
+      <div className="mb-4">
+        <h2 className="text-2xl font-bold">BioDockify AI</h2>
+        <p className="text-sm text-gray-500">Ask questions about molecular docking, simulations, and more</p>
       </div>
 
-      <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <h3>Chat</h3>
+      <div className="flex-1 flex flex-col bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div className="flex justify-between items-center p-4 border-b border-gray-200">
+          <h3 className="font-semibold">Chat</h3>
           <select
             value={selectedProvider}
             onChange={e => setSelectedProvider(e.target.value)}
-            style={{ padding: '0.5rem', background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: '4px' }}
+            className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white"
           >
             {providers.map(p => (
               <option key={p.id} value={p.id}>{p.name}</option>
@@ -73,35 +73,44 @@ export default function AIAssistant() {
           </select>
         </div>
 
-        <div className="ai-chat">
-          <div className="chat-messages">
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {messages.length === 0 ? (
-              <p style={{ color: 'var(--text-secondary)', textAlign: 'center', marginTop: '2rem' }}>
+              <p className="text-gray-500 text-center mt-8">
                 Ask me anything about molecular docking, MD simulations, or drug discovery!
               </p>
             ) : (
               messages.map((msg, i) => (
-                <div key={i} className={`chat-message ${msg.role}`}>
-                  <strong>{msg.role === 'user' ? 'You' : 'BioDockify AI'}:</strong> {msg.content}
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[75%] rounded-lg px-4 py-2 ${
+                    msg.role === 'user'
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-gray-100 text-gray-900'
+                  }`}>
+                    <strong>{msg.role === 'user' ? 'You' : 'BioDockify AI'}:</strong> {msg.content}
+                  </div>
                 </div>
               ))
             )}
             {isLoading && (
-              <div className="chat-message ai">
-                <em>Thinking...</em>
+              <div className="flex justify-start">
+                <div className="bg-gray-100 rounded-lg px-4 py-2 text-gray-500">
+                  <em>Thinking...</em>
+                </div>
               </div>
             )}
           </div>
 
-          <div className="chat-input">
+          <div className="flex gap-2 p-4 border-t border-gray-200">
             <input
               type="text"
               placeholder="Ask BioDockify AI..."
               value={input}
               onChange={e => setInput(e.target.value)}
-              onKeyPress={e => e.key === 'Enter' && handleSend()}
+              onKeyDown={e => e.key === 'Enter' && handleSend()}
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <button className="btn btn-primary" onClick={handleSend} disabled={isLoading}>
+            <button className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed" onClick={handleSend} disabled={isLoading}>
               Send
             </button>
           </div>
