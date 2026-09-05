@@ -7,6 +7,8 @@
 </p>
 
 > **AI-Powered Autonomous Drug Discovery Platform** — runs at `http://localhost:8000`
+>
+> **Web platform:** [www.biodockify.com](https://www.biodockify.com) — molecular docking, MD simulation and ADMET in the browser. Free tier, no installation. AI multi-target predictor: [ai.biodockify.com](https://ai.biodockify.com)
 
 An intelligent molecular docking platform with Discovery Studio-inspired UI, AI-powered molecule optimization, and automated drug discovery workflows.
 
